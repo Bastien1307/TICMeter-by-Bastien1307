@@ -127,6 +127,17 @@ En mode Zigbee, le TICMeter est reconnu par le plugin [Zigbee for Domoticz](http
 
 *Capture et intégration : [pipiche38](https://github.com/pipiche38), auteur de Zigbee for Domoticz, qui l'avait proposée au dépôt d'origine ([PR #36](https://github.com/GammaTroniques/TICMeter/pull/36), jamais fusionnée).*
 
+La capture montre les widgets créés à l'appairage pour un Linky en **mode standard, monophasé, contrat heures pleines / heures creuses** :
+
+- en **orange**, les widgets propres aux contrats **Tempo ou EJP** (couleur du jour, couleur du lendemain, index des jours bleus et rouges) : inutiles avec un autre contrat, on peut les masquer ;
+- en **bleu**, les widgets du **triphasé** (tension et puissance par phase) : utilisés en plus des autres sur une installation triphasée.
+
+Pour aller plus loin, sur le wiki de Zigbee for Domoticz (en anglais) :
+
+- [la page TICMeter](https://zigbeefordomoticz.github.io/wiki/en-eng/Corner_GammaTroniques.html) : la liste complète des widgets et, pour chacun, les modes où il fonctionne (historique ou standard, monophasé ou triphasé), ainsi qu'un second exemple en mode historique, contrat Base ;
+- [la page technique](https://github.com/zigbeefordomoticz/wiki/blob/master/en-eng/Technical/ticmeter-integration.md) : la correspondance entre les champs du Linky et les attributs Zigbee (par exemple `EASF01` → index 1, `EASF02` → index 2) ;
+- toutes les données reçues du TICMeter sont aussi visibles dans l'interface du plugin : **WebUI → Manufacturer → GammaTroniques**.
+
 ### Compiler
 
 ESP-IDF **v5.2.1**, cible `esp32c6`. Appliquer à ESP-IDF la seule modification utile du
@@ -189,7 +200,7 @@ from the browser. Command line: back up the whole flash first
 [release](../../releases) files at `0x10000` (`ota_data_initial.bin`), `0x17000`
 (`storage.bin`) and `0x30000` (`TICMeter.bin`). Configuration and Zigbee pairing are kept.
 
-**Domoticz**: in Zigbee mode the TICMeter works with the [Zigbee for Domoticz](https://github.com/zigbeefordomoticz/Domoticz-Zigbee) plugin (the setup this version was tested on) — see the screenshot above, by [pipiche38](https://github.com/pipiche38), author of Zigbee for Domoticz ([PR #36](https://github.com/GammaTroniques/TICMeter/pull/36) on the original repository, never merged).
+**Domoticz**: in Zigbee mode the TICMeter works with the [Zigbee for Domoticz](https://github.com/zigbeefordomoticz/Domoticz-Zigbee) plugin (the setup this version was tested on) — see the screenshot above, by [pipiche38](https://github.com/pipiche38), author of Zigbee for Domoticz ([PR #36](https://github.com/GammaTroniques/TICMeter/pull/36) on the original repository, never merged). The screenshot shows a standard-mode, single-phase, peak / off-peak setup: orange widgets are for Tempo / EJP contracts only, blue ones for three-phase installations. Full widget list and technical mapping on the Zigbee for Domoticz wiki: [TICMeter page](https://zigbeefordomoticz.github.io/wiki/en-eng/Corner_GammaTroniques.html), [technical page](https://github.com/zigbeefordomoticz/wiki/blob/master/en-eng/Technical/ticmeter-integration.md).
 
 **Support**: this firmware is free and complete. If it helps you, you may buy me a coffee,
 **only if you wish**: **[☕ paypal.me/sebastienRanc](https://paypal.me/sebastienRanc)**
