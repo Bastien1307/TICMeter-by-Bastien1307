@@ -119,6 +119,14 @@ Ne pas laisser la page de mise à jour GammaTroniques ouverte : elle monopolise 
 **Revenir au firmware officiel** : depuis la page de mise à jour GammaTroniques, ou en
 réécrivant la sauvegarde (`write_flash 0 sauvegarde_ticmeter.bin`).
 
+### Avec Domoticz (Zigbee for Domoticz)
+
+En mode Zigbee, le TICMeter est reconnu par le plugin [Zigbee for Domoticz](https://github.com/zigbeefordomoticz/Domoticz-Zigbee) (Z4D). C'est la configuration sur laquelle cette version a été testée.
+
+<img src="https://zigbeefordomoticz.github.io/wiki/Images/GammaTroniques-TICMeter.png" alt="TICMeter dans Domoticz avec Zigbee for Domoticz" height="600"/>
+
+*Capture et intégration : [pipiche38](https://github.com/pipiche38), auteur de Zigbee for Domoticz, qui l'avait proposée au dépôt d'origine ([PR #36](https://github.com/GammaTroniques/TICMeter/pull/36), jamais fusionnée).*
+
 ### Compiler
 
 ESP-IDF **v5.2.1**, cible `esp32c6`. Appliquer à ESP-IDF la seule modification utile du
@@ -180,6 +188,8 @@ from the browser. Command line: back up the whole flash first
 (`esptool.py --chip esp32c6 -p <PORT> read_flash 0 0x400000 backup.bin`), then flash the
 [release](../../releases) files at `0x10000` (`ota_data_initial.bin`), `0x17000`
 (`storage.bin`) and `0x30000` (`TICMeter.bin`). Configuration and Zigbee pairing are kept.
+
+**Domoticz**: in Zigbee mode the TICMeter works with the [Zigbee for Domoticz](https://github.com/zigbeefordomoticz/Domoticz-Zigbee) plugin (the setup this version was tested on) — see the screenshot above, by [pipiche38](https://github.com/pipiche38), author of Zigbee for Domoticz ([PR #36](https://github.com/GammaTroniques/TICMeter/pull/36) on the original repository, never merged).
 
 **Support**: this firmware is free and complete. If it helps you, you may buy me a coffee,
 **only if you wish**: **[☕ paypal.me/sebastienRanc](https://paypal.me/sebastienRanc)**
