@@ -1,17 +1,794 @@
 <!DOCTYPE html>
-<html>
-
+<html lang="fr">
 <head>
-    <meta charset='utf-8'>
-    <meta http-equiv='X-UA-Compatible' content='IE=edge'>
-    <title>TICMeter</title>
-    <meta name='viewport' content='width=device-width, initial-scale=1'>
-    <script type="module" src="https://unpkg.com/esp-web-tools@9/dist/web/install-button.js?module"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TICMeter by Bastien1307</title>
+  <meta name="description" content="TICMeter by Bastien1307 : connecter, mettre à jour et paramétrer un TICMeter depuis le navigateur (firmware non officiel).">
+  <style>
+    :root {
+      --bg: #f6f7f9; --card: #ffffff; --text: #1d2330; --muted: #5d6675; --border: #dde1e7;
+      --accent: #1f6feb; --accent-text: #ffffff; --ok: #1a7f37; --warn: #9a6700; --err: #cf222e;
+      --code-bg: #0f1419; --code-text: #d6dde6;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117; --card: #161b22; --text: #e6edf3; --muted: #8d96a0; --border: #30363d;
+        --accent: #2f81f7; --accent-text: #ffffff; --ok: #3fb950; --warn: #d29922; --err: #f85149;
+        --code-bg: #010409; --code-text: #c9d1d9;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+      font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+    h1 { font-size: 1.6rem; margin: 0 0 4px; }
+    h2 { font-size: 1.15rem; margin: 0 0 12px; }
+    .sub { color: var(--muted); margin: 0 0 20px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+      padding: 18px; margin-bottom: 16px; }
+    .hidden { display: none !important; }
+    button { font: inherit; border-radius: 7px; border: 1px solid var(--border); background: var(--card);
+      color: var(--text); padding: 8px 14px; cursor: pointer; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+    button.danger { color: var(--err); border-color: var(--err); }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px 18px; }
+    .kv { display: flex; flex-direction: column; }
+    .kv span:first-child { color: var(--muted); font-size: .85rem; }
+    .kv span:last-child { font-weight: 600; overflow-wrap: anywhere; }
+    label { display: flex; flex-direction: column; gap: 4px; font-size: .9rem; color: var(--muted); }
+    input, select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border);
+      border-radius: 7px; padding: 7px 9px; min-width: 0; }
+    .field-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; margin-bottom: 12px; }
+    .notice { border-left: 4px solid var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent);
+      padding: 10px 12px; border-radius: 6px; margin: 10px 0; }
+    .notice.err { border-color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent); }
+    .notice.ok { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+    .pill { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: .8rem; font-weight: 600;
+      border: 1px solid currentColor; }
+    .pill.ok { color: var(--ok); } .pill.warn { color: var(--warn); } .pill.err { color: var(--err); }
+    progress { width: 100%; height: 14px; }
+    #log { background: var(--code-bg); color: var(--code-text); font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace;
+      height: 260px; overflow: auto; padding: 10px; border-radius: 7px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    details > summary { cursor: pointer; font-weight: 600; }
+    footer { color: var(--muted); font-size: .85rem; text-align: center; margin-top: 28px; }
+    a { color: var(--accent); }
+    .muted { color: var(--muted); }
+    @media (max-width: 520px) { .field-row { grid-template-columns: 1fr; } }
+  </style>
 </head>
-
 <body>
-    <p>TICMeter</p>
-    <esp-web-install-button manifest="https://github.com/GammaTroniques/TICMeter/releases/latest/download/manifest.json"></esp-web-install-button>
-</body>
+<main>
+  <h1>TICMeter by Bastien1307</h1>
+  <p class="sub">Connecter, mettre à jour et paramétrer votre TICMeter par USB.
+    Firmware <strong>TICMeter by Bastien1307</strong> : version <strong>non officielle</strong> du firmware de
+    <a href="https://github.com/GammaTroniques/TICMeter" target="_blank" rel="noopener">GammaTroniques</a> —
+    <a href="https://github.com/Bastien1307/TICMeter-by-Bastien1307" target="_blank" rel="noopener">code source et explications</a>.</p>
 
+  <div id="unsupported" class="notice err hidden">
+    Votre navigateur ne sait pas communiquer avec un port USB. Utilisez <strong>Chrome</strong>, <strong>Edge</strong> ou <strong>Opera</strong>
+    sur ordinateur (Windows, macOS, Linux, ChromeOS). Safari, Firefox, Brave et les téléphones ne sont pas compatibles.
+  </div>
+
+  <!-- Connexion -->
+  <section class="card" id="connect-card">
+    <h2>1. Connexion</h2>
+    <p>Branchez le TICMeter à l'ordinateur avec un câble USB-C (il peut rester raccordé au Linky),
+      puis cliquez sur « Connecter ». Choisissez le port nommé <em>USB JTAG/serial debug unit</em>.</p>
+    <div class="row">
+      <button class="primary" id="btn-connect">Connecter le TICMeter</button>
+      <button id="btn-disconnect" class="hidden">Déconnecter</button>
+      <span id="conn-status" class="muted">Non connecté</span>
+    </div>
+    <p class="muted" style="font-size:.85rem;margin:10px 0 0">
+      Navigateurs compatibles : <strong>Chrome</strong>, <strong>Edge</strong> et <strong>Opera</strong>,
+      sur ordinateur (Windows, macOS, Linux, ChromeOS).
+      Non compatibles : Safari, Firefox, Brave, et les téléphones ou tablettes.
+    </p>
+    <div id="console-missing" class="notice hidden">
+      Le TICMeter ne répond pas aux commandes. En mode Zigbee, la console ne démarre que si l'USB est branché
+      <strong>au démarrage</strong>, et le firmware officiel ne l'a pas du tout en Zigbee.
+      <div class="row" style="margin-top:8px">
+        <button id="btn-reboot-console">Redémarrer le TICMeter</button>
+        <span class="muted">(environ 1 minute). La mise à jour reste possible sans console.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- État -->
+  <section class="card hidden" id="status-card">
+    <div class="row" style="justify-content:space-between">
+      <h2>2. État du TICMeter</h2>
+      <button id="btn-refresh">Actualiser</button>
+    </div>
+    <div class="grid">
+      <div class="kv"><span>Firmware</span><span id="st-version">—</span></div>
+      <div class="kv"><span>Communication</span><span id="st-mode">—</span></div>
+      <div class="kv"><span>Mode TIC</span><span id="st-linky">—</span></div>
+      <div class="kv"><span>Contrat</span><span id="st-contract">—</span></div>
+      <div class="kv"><span>Dernière lecture</span><span id="st-reading">—</span></div>
+      <div class="kv"><span>Envoi</span><span id="st-send">—</span></div>
+      <div class="kv"><span>Récepteur mode standard</span><span id="st-softrx">—</span></div>
+      <div class="kv"><span>Retard compensé</span><span id="st-skew">—</span></div>
+    </div>
+    <div id="wait-reading" class="hidden" style="margin-top:14px">
+      <p id="wait-text" class="muted" style="margin:0 0 4px;font-size:.9rem"></p>
+      <progress id="wait-bar" max="100" value="0"></progress>
+    </div>
+  </section>
+
+  <!-- Mise à jour -->
+  <section class="card hidden" id="update-card">
+    <h2>3. Mise à jour</h2>
+    <p id="upd-summary" class="muted">Recherche de la dernière version…</p>
+    <div class="row">
+      <button id="btn-backup">Sauvegarder la flash (4 Mo)</button>
+      <button class="primary" id="btn-update" disabled>Mettre à jour</button>
+    </div>
+    <p class="muted" style="font-size:.85rem">La mise à jour garde la configuration et l'appairage Zigbee.
+      La sauvegarde permet de revenir exactement à l'état actuel (fichier à conserver précieusement).</p>
+    <div id="flash-progress" class="hidden">
+      <p id="flash-step" style="margin:8px 0 4px"></p>
+      <progress id="flash-bar" max="100" value="0"></progress>
+    </div>
+    <div id="flash-result"></div>
+    <details style="margin-top:12px">
+      <summary>Restaurer une sauvegarde</summary>
+      <p class="muted">Réécrit toute la flash avec un fichier de sauvegarde de 4 Mo fait sur <strong>ce</strong> TICMeter.</p>
+      <div class="row">
+        <input type="file" id="restore-file" accept=".bin">
+        <button class="danger" id="btn-restore" disabled>Restaurer</button>
+      </div>
+    </details>
+  </section>
+
+  <!-- Paramètres -->
+  <section class="card hidden" id="settings-card">
+    <h2>4. Paramètres</h2>
+    <p class="muted">Chaque réglage est enregistré dans le TICMeter dès que vous cliquez sur « Enregistrer ».
+      Redémarrez ensuite le TICMeter pour qu'il soit pris en compte.</p>
+
+    <div class="field-row">
+      <label>Mode de communication
+        <select id="set-mode">
+          <option value="4">Zigbee</option>
+          <option value="2">MQTT</option>
+          <option value="3">MQTT Home Assistant</option>
+          <option value="1">Web (HTTP)</option>
+          <option value="5">Tuya</option>
+        </select>
+      </label>
+      <button data-save="mode">Enregistrer</button>
+    </div>
+
+    <div class="field-row">
+      <label>Mode TIC du Linky
+        <select id="set-linky">
+          <option value="2">Automatique</option>
+          <option value="1">Standard</option>
+          <option value="0">Historique</option>
+        </select>
+      </label>
+      <button data-save="linky">Enregistrer</button>
+    </div>
+
+    <div class="field-row">
+      <label>Intervalle entre deux envois (secondes, 30 minimum)
+        <input type="number" id="set-refresh" min="30" step="1">
+      </label>
+      <button data-save="refresh">Enregistrer</button>
+    </div>
+
+    <div id="std-settings">
+      <div class="field-row">
+        <label>Libellés du mode standard (tarif, contrat)
+          <select id="set-labels">
+            <option value="0">Nettoyés : « HEURE PLEINE » (recommandé)</option>
+            <option value="1">Texte brut du Linky : «  HEURE  PLEINE  »</option>
+          </select>
+        </label>
+        <button data-save="labels">Enregistrer</button>
+      </div>
+      <div class="field-row">
+        <label>Retard compensé du récepteur (µs) — laisser 0 pour la calibration automatique
+          <input type="number" id="set-skew" min="0" max="60" step="1" value="0">
+        </label>
+        <button data-save="skew">Enregistrer</button>
+      </div>
+    </div>
+    <p id="std-unavailable" class="notice hidden">Ce firmware ne propose pas les réglages du mode standard :
+      mettez-le à jour (section 3).</p>
+
+    <details id="wifi-block">
+      <summary>Wi-Fi (modes Web, MQTT et Tuya)</summary>
+      <div class="grid" style="margin-top:10px">
+        <label>Nom du réseau (SSID)<input id="set-ssid" autocomplete="off"></label>
+        <label>Mot de passe<input id="set-wifipw" type="password" autocomplete="new-password"></label>
+      </div>
+      <div class="row" style="margin-top:10px"><button data-save="wifi">Enregistrer le Wi-Fi</button></div>
+    </details>
+
+    <details id="mqtt-block" style="margin-top:10px">
+      <summary>Serveur MQTT</summary>
+      <div class="grid" style="margin-top:10px">
+        <label>Adresse<input id="set-mqtt-host" placeholder="192.168.1.10"></label>
+        <label>Port<input id="set-mqtt-port" type="number" value="1883"></label>
+        <label>Topic<input id="set-mqtt-topic" placeholder="TICMeter/xxxxxx"></label>
+        <label>Utilisateur<input id="set-mqtt-user" autocomplete="off"></label>
+        <label>Mot de passe<input id="set-mqtt-pw" type="password" autocomplete="new-password"></label>
+      </div>
+      <div class="row" style="margin-top:10px"><button data-save="mqtt">Enregistrer le MQTT</button></div>
+    </details>
+
+    <div class="row" style="margin-top:16px">
+      <button class="primary" id="btn-reboot">Redémarrer le TICMeter</button>
+    </div>
+    <div id="settings-result"></div>
+  </section>
+
+  <!-- Console -->
+  <section class="card hidden" id="log-card">
+    <details>
+      <summary>Console et journal du TICMeter</summary>
+      <div class="row" style="margin-top:10px">
+        <button type="button" id="btn-log-copy">Copier le journal</button>
+        <button type="button" id="btn-log-save">Enregistrer dans un fichier</button>
+        <button type="button" id="btn-log-clear">Effacer</button>
+        <span id="log-msg" class="muted"></span>
+      </div>
+      <div id="log" style="margin-top:10px"></div>
+      <form id="cmd-form" class="row" style="margin-top:8px">
+        <input id="cmd-input" placeholder="Commande (ex. help, linky-print 0, soft-rx-stats)" style="flex:1">
+        <button type="submit">Envoyer</button>
+      </form>
+    </details>
+  </section>
+
+  <footer>
+    Firmware TICMeter by Bastien1307 et cette page sous licence <a href="https://creativecommons.org/licenses/by-nc/4.0/deed.fr" target="_blank" rel="noopener">CC BY-NC 4.0</a>.
+    TICMeter est un produit <a href="https://gammatroniques.fr" target="_blank" rel="noopener">GammaTroniques</a>,
+    qui n'est pas responsable de cette version.
+    Mise à jour par <a href="https://github.com/espressif/esptool-js" target="_blank" rel="noopener">esptool-js</a> (Espressif, Apache 2.0).
+  </footer>
+</main>
+
+<script type="module">
+import { ESPLoader, Transport } from "./lib/esptool-bundle.js";
+import { md5 } from "./lib/md5.js";
+import { parseLine, compareVersions, quoteArg, stripAnsi, maskSecrets } from "./lib/parse.js";
+
+const $ = (id) => document.getElementById(id);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const MODES = { 1: "Web (HTTP)", 2: "MQTT", 3: "MQTT Home Assistant", 4: "Zigbee", 5: "Tuya" };
+const LINKY_MODES = { 0: "Historique", 1: "Standard", 2: "Automatique" };
+const FLASH_SIZE = 0x400000;
+const ESPRESSIF_VID = 0x303a;
+
+let port = null;
+let link = null;          // console série
+let busy = false;         // flash en cours
+let manifest = null;
+let state = {};
+let consoleOk = false;
+let backupDone = false;
+let rebooting = false;    // redémarrage attendu : le port USB va disparaître puis revenir
+
+// ---------------------------------------------------------------- journal
+const logEl = $("log");
+function log(line, cls) {
+  const atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 20;
+  const div = document.createElement("div");
+  div.textContent = line;
+  if (cls) div.style.color = cls;
+  logEl.appendChild(div);
+  while (logEl.childNodes.length > 2000) logEl.removeChild(logEl.firstChild);
+  if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+}
+
+// ---------------------------------------------------------------- console série
+class SerialLink {
+  constructor(port) { this.port = port; this.listeners = new Set(); this.reading = false; }
+
+  async open() {
+    await this.port.open({ baudRate: 115200 });
+    this.reading = true;
+    this.loop = this.readLoop();
+  }
+
+  async readLoop() {
+    const decoder = new TextDecoder();
+    let buf = "";
+    while (this.reading && this.port.readable) {
+      this.reader = this.port.readable.getReader();
+      try {
+        for (;;) {
+          const { value, done } = await this.reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          let i;
+          while ((i = buf.search(/\r?\n/)) >= 0) {
+            const line = stripAnsi(buf.slice(0, i));
+            buf = buf.slice(buf[i] === "\r" ? i + 2 : i + 1);
+            if (line.length) this.emit(line);
+          }
+        }
+      } catch (e) {
+        if (this.reading) log("Lecture interrompue : " + e.message, "var(--warn)");
+      } finally {
+        this.reader.releaseLock();
+      }
+    }
+  }
+
+  emit(line) {
+    log(maskSecrets(line));
+    if (parseLine(line, state)) renderStatus();
+    for (const l of this.listeners) l(line);
+  }
+
+  async write(text) {
+    const w = this.port.writable.getWriter();
+    try { await w.write(new TextEncoder().encode(text)); } finally { w.releaseLock(); }
+  }
+
+  // Envoie une commande et renvoie les lignes reçues pendant `waitMs`
+  async command(cmd, waitMs = 900) {
+    const lines = [];
+    const l = (line) => lines.push(line);
+    this.listeners.add(l);
+    log("> " + cmd, "var(--accent)");
+    await this.write(cmd + "\r\n");
+    await sleep(waitMs);
+    this.listeners.delete(l);
+    return lines;
+  }
+
+  // Attend une ligne correspondant à `re`, au plus `timeoutMs`
+  waitFor(re, timeoutMs) {
+    return new Promise((resolve) => {
+      const l = (line) => { if (re.test(line)) { this.listeners.delete(l); clearTimeout(t); resolve(line); } };
+      const t = setTimeout(() => { this.listeners.delete(l); resolve(null); }, timeoutMs);
+      this.listeners.add(l);
+    });
+  }
+
+  // Redémarrage par la broche RTS (comme esptool) : le TICMeter repart normalement
+  async reboot() {
+    await this.port.setSignals({ dataTerminalReady: false, requestToSend: true });
+    await sleep(120);
+    try { await this.port.setSignals({ dataTerminalReady: false, requestToSend: false }); } catch {}
+  }
+
+  async close() {
+    this.reading = false;
+    try { await this.reader?.cancel(); } catch {}
+    try { await this.loop; } catch {}
+    try { await this.port.close(); } catch {}
+  }
+}
+
+// ---------------------------------------------------------------- affichage de l'état
+function pill(text, cls) { return `<span class="pill ${cls}">${text}</span>`; }
+
+function renderStatus() {
+  $("st-version").textContent = state.version || "—";
+  $("st-mode").textContent = state.mode != null ? (MODES[state.mode] || `Mode ${state.mode}`) : "—";
+  $("st-linky").textContent = state.linkyMode != null
+    ? LINKY_MODES[state.linkyMode] + (state.linkyCurrent ? ` (détecté : ${state.linkyCurrent})` : "")
+    : (state.linkyCurrent || "—");
+  const waiting = state.version ? "en attente de la prochaine lecture…" : "—";
+  $("st-contract").textContent = state.contract || waiting;
+  if (!state.lastReading) $("st-reading").textContent = waiting;
+  if (!state.lastSend) $("st-send").textContent = waiting;
+  if (state.lastReading) {
+    const e = state.checksumErrors;
+    const cls = e <= 10 ? "ok" : e <= 100 ? "warn" : "err";
+    $("st-reading").innerHTML = `${state.lastReading.toLocaleTimeString()} — ${state.fields ?? "?"} champs, `
+      + pill(`${e} erreur${e > 1 ? "s" : ""}`, cls);
+  }
+  if (state.lastSend) $("st-send").innerHTML = state.lastSend === "ok" ? pill("réussi", "ok") : pill("échec", "err");
+  if (state.softRx != null) $("st-softrx").textContent = state.softRx ? "actif" : "inactif (mode historique)";
+  if (state.skew != null) {
+    $("st-skew").textContent = `${state.skew} µs` + (state.skewForced ? " (imposé)" : " (automatique)")
+      + (state.calScore ? ` — calibration ${(state.calScore / 10).toFixed(1)} %` : "");
+  }
+  renderUpdate();
+}
+
+function fillSettings() {
+  if (state.mode != null) $("set-mode").value = String(state.mode);
+  if (state.linkyMode != null) $("set-linky").value = String(state.linkyMode);
+  if (state.refresh != null) $("set-refresh").value = state.refresh;
+  if (state.rawLabels != null) $("set-labels").value = state.rawLabels ? "1" : "0";
+  if (state.skew != null) $("set-skew").value = state.skewForced ? state.skew : 0;
+  if (state.ssid != null) $("set-ssid").value = state.ssid;
+  if (state.mqttHost != null) $("set-mqtt-host").value = state.mqttHost;
+  if (state.mqttPort) $("set-mqtt-port").value = state.mqttPort;
+  if (state.mqttTopic != null) $("set-mqtt-topic").value = state.mqttTopic;
+  if (state.mqttUser != null) $("set-mqtt-user").value = state.mqttUser;
+  // Tuya : seulement si le TICMeter possède ses clés (gravées en usine sur certains modèles)
+  const tuyaOpt = $("set-mode").querySelector('option[value="5"]');
+  if (state.tuyaUuid != null) {
+    const hasTuya = state.tuyaUuid && state.tuyaAuth;
+    tuyaOpt.disabled = !hasTuya;
+    tuyaOpt.textContent = hasTuya ? "Tuya" : "Tuya (indisponible : ce TICMeter n'a pas de clés Tuya)";
+  }
+  const hasStd = state.softRx != null;
+  $("std-settings").classList.toggle("hidden", !hasStd);
+  $("std-unavailable").classList.toggle("hidden", hasStd);
+}
+
+// ---------------------------------------------------------------- mise à jour : état
+async function loadManifest() {
+  try {
+    const r = await fetch("firmware/manifest.json", { cache: "no-cache" });
+    manifest = await r.json();
+  } catch (e) {
+    $("upd-summary").textContent = "Impossible de lire la dernière version disponible : " + e.message;
+  }
+  renderUpdate();
+}
+
+function renderUpdate() {
+  if (!manifest) return;
+  const cur = state.version;
+  const cmp = cur ? compareVersions(cur, manifest.version) : NaN;
+  let txt = `Dernière version du firmware TICMeter by Bastien1307 : <strong>${manifest.version}</strong> (${manifest.date}) — `
+    + `<a href="${manifest.notes}" target="_blank" rel="noopener">nouveautés</a>. `;
+  if (!cur) txt += "Version installée inconnue (la console ne répond pas).";
+  else if (cmp < 0) txt += `Installée : ${cur}. ${pill("mise à jour disponible", "warn")}`;
+  else if (cmp === 0) txt += `Installée : ${cur}. ${pill("à jour", "ok")}`;
+  else txt += `Installée : ${cur} (plus récente).`;
+  $("upd-summary").innerHTML = txt;
+  $("upd-summary").classList.remove("muted");
+  $("btn-update").disabled = busy || !port;
+  $("btn-update").textContent = cmp === 0 ? "Réinstaller" : "Mettre à jour";
+}
+
+// ---------------------------------------------------------------- attente de la première lecture
+let waitTimer = null;
+function startWaitBar() {
+  stopWaitBar();
+  const total = (state.refresh || 60) * 1000;
+  const t0 = Date.now();
+  $("wait-reading").classList.remove("hidden");
+  const tick = () => {
+    if (state.lastReading) { stopWaitBar(); return; }
+    const el = Date.now() - t0;
+    const left = Math.ceil((total - el) / 1000);
+    $("wait-bar").value = Math.min(100, (el / total) * 100);
+    $("wait-text").textContent = left > 0
+      ? `Prochaine lecture du Linky dans ${left} s au plus…`
+      : "Presque… la lecture est en cours.";
+  };
+  tick();
+  waitTimer = setInterval(tick, 500);
+}
+function stopWaitBar() {
+  clearInterval(waitTimer);
+  waitTimer = null;
+  $("wait-reading").classList.add("hidden");
+}
+
+// ---------------------------------------------------------------- connexion
+async function queryAll() {
+  const info = await link.command("info", 900);
+  consoleOk = info.some((l) => /App version:/.test(l));
+  $("console-missing").classList.toggle("hidden", consoleOk);
+  if (!consoleOk) { renderStatus(); return; }
+  for (const c of ["get-mode", "get-linky-mode", "get-refresh", "get-wifi", "get-mqtt", "get-tuya"]) await link.command(c, 500);
+  const rx = await link.command("soft-rx-stats", 700);
+  if (!rx.some((l) => /^Soft RX:/.test(l))) { state.softRx = undefined; }
+  renderStatus();
+  fillSettings();
+  if (!state.lastReading && !waitTimer) startWaitBar();
+}
+
+async function connect() {
+  try {
+    port = await navigator.serial.requestPort({ filters: [{ usbVendorId: ESPRESSIF_VID }] });
+  } catch { return; }
+  await openConsole();
+  $("btn-connect").classList.add("hidden");
+  $("btn-disconnect").classList.remove("hidden");
+  for (const id of ["status-card", "update-card", "settings-card", "log-card"]) $(id).classList.remove("hidden");
+  $("conn-status").textContent = "Connecté";
+  await queryAll();
+}
+
+async function openConsole() {
+  link = new SerialLink(port);
+  await link.open();
+}
+
+// L'USB du TICMeter fait partie de la puce : à chaque redémarrage il disparaît puis revient.
+// On attend qu'il réapparaisse (port déjà autorisé : pas de nouvelle demande) et on rouvre la console.
+async function reconnect(timeoutMs = 45000) {
+  if (link) { await link.close(); link = null; }
+  const deadline = Date.now() + timeoutMs;
+  await sleep(800);
+  while (Date.now() < deadline) {
+    const ports = await navigator.serial.getPorts();
+    const candidates = [port, ...ports.filter((p) => p !== port && p.getInfo().usbVendorId === ESPRESSIF_VID)];
+    for (const p of candidates) {
+      if (!p) continue;
+      try {
+        port = p;
+        await openConsole();
+        // vivant seulement s'il parle : un port ouvert juste avant sa disparition ne dit rien
+        let alive = await link.waitFor(/./, 5000);
+        if (!alive) {
+          // muet mais présent : le TICMeter est resté en mode programmation (après esptool-js).
+          // On le relance normalement : DTR relâché, impulsion sur RTS.
+          log("Port muet : le TICMeter est resté en mode programmation, relance…", "var(--muted)");
+          try { await link.reboot(); } catch {}
+          alive = await link.waitFor(/./, 8000);
+        }
+        if (alive) {
+          log("Console rouverte.", "var(--ok)");
+          return true;
+        }
+        log("Toujours muet, nouvel essai…", "var(--muted)");
+        await link.close();
+        link = null;
+      } catch { /* pas encore revenu */ }
+    }
+    await sleep(700);
+  }
+  log("Le TICMeter n'est pas réapparu sur l'USB.", "var(--err)");
+  return false;
+}
+
+async function disconnect() {
+  if (link) await link.close();
+  link = null; port = null; state = {}; consoleOk = false;
+  stopWaitBar();
+  $("btn-connect").classList.remove("hidden");
+  $("btn-disconnect").classList.add("hidden");
+  for (const id of ["status-card", "update-card", "settings-card", "log-card", "console-missing"]) $(id).classList.add("hidden");
+  $("conn-status").textContent = "Non connecté";
+}
+
+// Après un redémarrage : vide l'état, affiche l'attente, attend la console puis relit tout.
+// La console démarre après la première lecture du Linky (~15 s) et, en Zigbee, après la pile Zigbee.
+async function waitAfterReboot() {
+  state = {};
+  stopWaitBar();
+  renderStatus();
+  $("wait-reading").classList.remove("hidden");
+  const t0 = Date.now(), shown = 60000;
+  const tick = () => {
+    const el = Date.now() - t0;
+    $("wait-bar").value = Math.min(100, (el / shown) * 100);
+    $("wait-text").textContent = el < shown ? "Redémarrage du TICMeter… (environ 1 minute)"
+      : "Presque… le TICMeter termine son démarrage.";
+  };
+  tick();
+  waitTimer = setInterval(tick, 500);
+  let back = await reconnect();
+  let ready = null;
+  const deadline = Date.now() + 90000;
+  while (back && !ready && Date.now() < deadline) {
+    ready = await link.waitFor(/Type 'help'/, 5000);
+    if (!ready && !port.readable) {            // la console rouverte est morte : on recommence
+      log("Console perdue pendant le démarrage, reconnexion…", "var(--muted)");
+      back = await reconnect();
+    }
+  }
+  rebooting = false;
+  if (!back) { stopWaitBar(); return false; }
+  stopWaitBar();
+  await sleep(ready ? 1000 : 0);
+  for (let i = 0; i < 3; i++) {
+    await queryAll();
+    if (consoleOk) break;
+    await sleep(3000);
+  }
+  return consoleOk;
+}
+
+async function rebootAndWait(msgEl) {
+  if (msgEl) msgEl.innerHTML = `<p class="notice">Redémarrage du TICMeter… (environ 1 minute)</p>`;
+  rebooting = true;
+  await link.reboot();
+  const ok = await waitAfterReboot();
+  if (msgEl) msgEl.innerHTML = ok ? `<p class="notice ok">TICMeter redémarré.</p>`
+    : `<p class="notice">Le TICMeter a redémarré mais la console ne répond pas.</p>`;
+}
+
+// ---------------------------------------------------------------- flash (esptool-js)
+function setProgress(step, pct) {
+  $("flash-progress").classList.remove("hidden");
+  $("flash-step").textContent = step;
+  $("flash-bar").value = pct;
+}
+
+async function withLoader(action) {
+  busy = true;
+  document.querySelectorAll("button").forEach((b) => (b.disabled = true));
+  $("flash-result").innerHTML = "";
+  let transport;
+  try {
+    await link.close();
+    link = null;
+    setProgress("Passage en mode programmation…", 0);
+    transport = new Transport(port, false);
+    const loader = new ESPLoader({
+      transport, baudrate: 115200,
+      terminal: { clean() {}, writeLine: (d) => log(d, "var(--muted)"), write: (d) => log(d, "var(--muted)") },
+    });
+    const chip = await loader.main();
+    if (!/ESP32-C6/i.test(chip)) throw new Error(`Puce inattendue : ${chip} (un TICMeter est un ESP32-C6)`);
+    await action(loader);
+    setProgress("Redémarrage…", 100);
+    await loader.after("hard_reset");
+    return true;
+  } catch (e) {
+    $("flash-result").innerHTML = `<p class="notice err">Échec : ${e.message || e}</p>`;
+    log("Erreur : " + (e.message || e), "var(--err)");
+    return false;
+  } finally {
+    try { await transport?.disconnect(); } catch {}
+    rebooting = true;
+    busy = false;
+    document.querySelectorAll("button").forEach((b) => (b.disabled = false));
+    $("btn-restore").disabled = !$("restore-file").files.length;
+    renderUpdate();
+  }
+}
+
+// Après un échec : le TICMeter a pu redémarrer ou non ; on rouvre la console dès qu'il est là.
+async function recoverAfterFailure() {
+  rebooting = true;
+  const back = await reconnect(30000);
+  rebooting = false;
+  if (back) await queryAll();
+}
+
+async function backup() {
+  let data;
+  const ok = await withLoader(async (loader) => {
+    setProgress("Lecture de la flash…", 0);
+    data = await loader.readFlash(0, FLASH_SIZE, (_p, done, total) => setProgress(
+      `Lecture de la flash… ${Math.round(done / 1024)} / ${Math.round(total / 1024)} Ko`, (done / total) * 100));
+  });
+  if (!ok || !data) { await recoverAfterFailure(); return; }
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([data], { type: "application/octet-stream" }));
+  a.download = `ticmeter-sauvegarde-${stamp}.bin`;
+  a.click();
+  backupDone = true;
+  $("flash-result").innerHTML = `<p class="notice ok">Sauvegarde téléchargée (${a.download}). Gardez ce fichier : il permet de revenir à l'état actuel.</p>`;
+  $("flash-progress").classList.add("hidden");
+  await waitAfterReboot();
+}
+
+async function writeFiles(files, label) {
+  const ok = await withLoader(async (loader) => {
+    await loader.writeFlash({
+      fileArray: files, flashMode: "keep", flashFreq: "keep", flashSize: "keep",
+      eraseAll: false, compress: true,
+      reportProgress: (i, written, total) => setProgress(
+        `${label} : fichier ${i + 1}/${files.length}…`, ((i + written / total) / files.length) * 100),
+      calculateMD5Hash: (image) => md5(image),
+    });
+  });
+  $("flash-progress").classList.add("hidden");
+  if (!ok) { await recoverAfterFailure(); return; }
+  $("flash-result").innerHTML = `<p class="notice ok">${label} terminée et vérifiée. Le TICMeter redémarre (environ 1 minute).</p>`;
+  await waitAfterReboot();
+}
+
+async function update() {
+  if (!backupDone && !confirm("Vous n'avez pas sauvegardé la flash pendant cette session.\n\n"
+    + "La mise à jour garde la configuration, mais une sauvegarde permet de revenir exactement en arrière.\n\n"
+    + "Continuer sans sauvegarde ?")) return;
+  setProgress("Téléchargement du firmware…", 0);
+  const files = [];
+  for (const p of manifest.parts) {
+    const r = await fetch("firmware/" + p.path, { cache: "no-cache" });
+    if (!r.ok) { $("flash-result").innerHTML = `<p class="notice err">Téléchargement impossible : ${p.path}</p>`; return; }
+    files.push({ data: new Uint8Array(await r.arrayBuffer()), address: p.offset });
+  }
+  await writeFiles(files, `Mise à jour vers ${manifest.version}`);
+}
+
+async function restore() {
+  const f = $("restore-file").files[0];
+  if (!f) return;
+  const data = new Uint8Array(await f.arrayBuffer());
+  if (data.length !== FLASH_SIZE) {
+    $("flash-result").innerHTML = `<p class="notice err">Ce fichier fait ${data.length} octets : une sauvegarde complète en fait ${FLASH_SIZE}.</p>`;
+    return;
+  }
+  if (!confirm("Réécrire toute la flash avec ce fichier ?\n\nÀ n'utiliser qu'avec une sauvegarde faite sur ce TICMeter.")) return;
+  await writeFiles([{ data, address: 0 }], "Restauration");
+}
+
+// ---------------------------------------------------------------- paramètres
+const SAVERS = {
+  mode: () => [`set-mode ${$("set-mode").value}`],
+  linky: () => [`set-linky-mode ${$("set-linky").value}`],
+  refresh: () => {
+    const v = Math.max(30, parseInt($("set-refresh").value, 10) || 60);
+    return [`set-refresh ${v}`];
+  },
+  labels: () => [`set-std-labels ${$("set-labels").value}`],
+  skew: () => {
+    const v = Math.min(60, Math.max(0, parseInt($("set-skew").value, 10) || 0));
+    return [`set-rx-skew ${v}`];
+  },
+  wifi: () => [`set-wifi ${quoteArg($("set-ssid").value)} ${quoteArg($("set-wifipw").value)}`],
+  mqtt: () => [`set-mqtt ${quoteArg($("set-mqtt-host").value)} ${parseInt($("set-mqtt-port").value, 10) || 1883} `
+    + `${quoteArg($("set-mqtt-topic").value)} ${quoteArg($("set-mqtt-user").value)} ${quoteArg($("set-mqtt-pw").value)}`],
+};
+
+async function save(kind) {
+  if (!link) return;
+  if (!consoleOk) {
+    $("settings-result").innerHTML = `<p class="notice err">La console ne répond pas : redémarrez le TICMeter (section 1).</p>`;
+    return;
+  }
+  const out = [];
+  for (const c of SAVERS[kind]()) out.push(...(await link.command(c, 900)));
+  const failed = out.some((l) => /Unrecognized command|Invalid argument|Command returned non-zero/i.test(l));
+  $("settings-result").innerHTML = failed
+    ? `<p class="notice err">Le TICMeter a refusé ce réglage. Détail dans la console ci-dessous.</p>`
+    : `<p class="notice ok">Enregistré. Redémarrez le TICMeter pour l'appliquer.</p>`;
+  if (kind === "wifi") $("set-wifipw").value = "";
+  if (kind === "mqtt") $("set-mqtt-pw").value = "";
+  await queryAll();
+}
+
+// ---------------------------------------------------------------- branchements
+if (!("serial" in navigator)) {
+  $("unsupported").classList.remove("hidden");
+  $("btn-connect").disabled = true;
+}
+$("btn-connect").onclick = connect;
+$("btn-disconnect").onclick = disconnect;
+$("btn-refresh").onclick = queryAll;
+$("btn-reboot-console").onclick = () => rebootAndWait($("flash-result"));
+$("btn-reboot").onclick = () => rebootAndWait($("settings-result"));
+$("btn-backup").onclick = backup;
+$("btn-update").onclick = update;
+$("btn-restore").onclick = restore;
+$("restore-file").onchange = () => { $("btn-restore").disabled = !$("restore-file").files.length; };
+document.querySelectorAll("[data-save]").forEach((b) => (b.onclick = () => save(b.dataset.save)));
+$("cmd-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const c = $("cmd-input").value.trim();
+  if (c && link) { $("cmd-input").value = ""; await link.command(c, 300); }
+};
+// ---------------------------------------------------------------- journal : copier, enregistrer
+const logText = () => [...logEl.childNodes].map((d) => d.textContent).join("\n");
+function logMsg(t) { $("log-msg").textContent = t; setTimeout(() => ($("log-msg").textContent = ""), 3000); }
+$("btn-log-copy").onclick = async () => {
+  try { await navigator.clipboard.writeText(logText()); logMsg("Copié."); }
+  catch { logMsg("Copie impossible : utilisez « Enregistrer dans un fichier »."); }
+};
+$("btn-log-save").onclick = () => {
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([logText() + "\n"], { type: "text/plain" }));
+  a.download = `ticmeter-journal-${stamp}.txt`;
+  a.click();
+  logMsg("Fichier enregistré.");
+};
+$("btn-log-clear").onclick = () => { logEl.textContent = ""; };
+
+navigator.serial?.addEventListener("connect", (e) => log("USB : un appareil est (ré)apparu.", "var(--muted)"));
+navigator.serial?.addEventListener("disconnect", async (e) => {
+  if (e.target !== port) return;
+  log("USB : le TICMeter a disparu.", "var(--muted)");
+  if (busy || rebooting) return;
+  log("Le TICMeter s'est déconnecté, tentative de reconnexion…", "var(--warn)");
+  if (!(await reconnect(10000))) disconnect();
+});
+loadManifest();
+</script>
+</body>
 </html>

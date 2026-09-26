@@ -5,6 +5,13 @@ Modifications apportées au firmware de [GammaTroniques](https://github.com/Gamm
 
 *Changes made to the GammaTroniques firmware, based on its `main` branch (commit `bd2da3f`).*
 
+## Page web — 2026-09-26
+
+- Page unique (`docs/`, publiée sur GitHub Pages) pour connecter le TICMeter en USB depuis le
+  navigateur : état, sauvegarde et restauration de la flash, mise à jour (sans effacer la
+  configuration), réglages. S'appuie sur esptool-js (Espressif, Apache 2.0).
+  *Single web page to connect, back up, update and configure the TICMeter over USB.*
+
 ## V3.3.0-std — 2026-09-26
 
 ### Corrigé / Fixed

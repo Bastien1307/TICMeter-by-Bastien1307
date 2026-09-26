@@ -1,4 +1,4 @@
-# TICMeter — version by Bastien1307 (non officielle)
+# TICMeter by Bastien1307 (non officiel / unofficial)
 
 [![licence](https://img.shields.io/badge/License-CC_BY--NC_4.0-lightgrey.svg?style=for-the-badge)](https://creativecommons.org/licenses/by-nc/4.0/)
 
@@ -68,6 +68,13 @@ dans Domoticz (plugin Zigbee for Domoticz), sur l'alimentation du Linky seule.
 Détail : [CHANGELOG.md](CHANGELOG.md).
 
 ### Installation
+
+**Le plus simple : la page web** 👉 **https://bastien1307.github.io/TICMeter-by-Bastien1307/**
+(Chrome, Edge ou Opera sur ordinateur). Branchez le TICMeter en USB, cliquez sur « Connecter » :
+la page affiche son état, permet de **sauvegarder la flash**, de **mettre à jour** (configuration et
+appairage Zigbee conservés) et de **régler** le TICMeter (mode de communication, mode TIC, Wi-Fi, MQTT…).
+
+**En ligne de commande**, avec esptool :
 
 Testé sur un TICMeter matériel 3.4.2 (ESP32-C6), Linky monophasé, mode Zigbee.
 
@@ -151,7 +158,9 @@ plugged (`soft-rx-stats`, `set-rx-skew`, `set-std-labels`); Zigbee attribute upd
 take the Zigbee stack lock; version **3.3.0** (`V3.3.0-std`); `htmlmin2` build dependency.
 See [CHANGELOG.md](CHANGELOG.md).
 
-**Install**: back up the whole flash first
+**Install**: easiest is the web page 👉 **https://bastien1307.github.io/TICMeter-by-Bastien1307/**
+(Chrome, Edge or Opera on a computer): connect over USB, back up, update and configure the TICMeter
+from the browser. Command line: back up the whole flash first
 (`esptool.py --chip esp32c6 -p <PORT> read_flash 0 0x400000 backup.bin`), then flash the
 [release](../../releases) files at `0x10000` (`ota_data_initial.bin`), `0x17000`
 (`storage.bin`) and `0x30000` (`TICMeter.bin`). Configuration and Zigbee pairing are kept.
