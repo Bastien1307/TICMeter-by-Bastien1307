@@ -178,7 +178,7 @@
     </div>
     <p class="muted" style="font-size:.85rem">La mise à jour garde la configuration et l'appairage Zigbee.
       La sauvegarde permet de revenir exactement à l'état actuel (fichier à conserver précieusement).</p>
-    <p class="muted" style="font-size:.8rem">Après chaque mise à jour réussie, un compteur anonyme de la version installée est augmenté de 1 (aucune donnée sur vous ni sur votre TICMeter).</p>
+    <p class="muted" style="font-size:.8rem">Après chaque mise à jour réussie, un compteur anonyme de la version installée est augmenté de 1 (aucune donnée sur vous ni sur votre TICMeter). Les visites de cette page et les connexions d'un TICMeter sont comptées de la même façon, anonymement.</p>
     <div id="flash-progress" class="hidden">
       <p id="flash-step" style="margin:8px 0 4px"></p>
       <progress id="flash-bar" max="100" value="0"></progress>
@@ -574,6 +574,7 @@ async function connect() {
   for (const id of ["status-card", "update-card", "settings-card", "log-card"]) $(id).classList.remove("hidden");
   $("conn-status").textContent = tr("Connecté", "Connected");
   updateTopbar();
+  countEvent("connexions");
   await queryAll();
 }
 
@@ -779,6 +780,15 @@ function countUpdate(version) {
   fetch(`https://abacus.jasoncameron.dev/hit/ticmeter-by-bastien1307/${key}`).catch(() => {});
 }
 
+// Compteurs anonymes « visites » et « connexions » : un total et un compteur par mois (hors essais en local).
+function countEvent(name) {
+  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) return;
+  const month = new Date().toISOString().slice(0, 7);
+  for (const key of [name, `${name}-${month}`]) {
+    fetch(`https://abacus.jasoncameron.dev/hit/ticmeter-by-bastien1307/${key}`).catch(() => {});
+  }
+}
+
 async function update() {
   if (!backupDone && !confirm(tr("Vous n'avez pas sauvegardé la flash pendant cette session.\n\n"
     + "La mise à jour garde la configuration, mais une sauvegarde permet de revenir exactement en arrière.\n\n"
@@ -921,6 +931,7 @@ function setLang(l) {
 $("btn-lang").onclick = () => setLang(lang === "en" ? "fr" : "en");
 setLang(lang);
 loadManifest();
+countEvent("visites");
 </script>
 </body>
 </html>

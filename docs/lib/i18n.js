@@ -44,8 +44,8 @@ const EN = {
   "La mise à jour garde la configuration et l'appairage Zigbee. La sauvegarde permet de revenir exactement à l'état actuel (fichier à conserver précieusement).":
     "Updating keeps the settings and the Zigbee pairing. The backup lets you go back exactly to the current state (keep that file safe).",
   "Restaurer une sauvegarde": "Restore a backup",
-  "Après chaque mise à jour réussie, un compteur anonyme de la version installée est augmenté de 1 (aucune donnée sur vous ni sur votre TICMeter).":
-    "After each successful update, an anonymous counter for the installed version is increased by 1 (no data about you or your TICMeter).",
+  "Après chaque mise à jour réussie, un compteur anonyme de la version installée est augmenté de 1 (aucune donnée sur vous ni sur votre TICMeter). Les visites de cette page et les connexions d'un TICMeter sont comptées de la même façon, anonymement.":
+    "After each successful update, an anonymous counter for the installed version is increased by 1 (no data about you or your TICMeter). Visits to this page and TICMeter connections are counted the same way, anonymously.",
   "Réécrit toute la flash avec un fichier de sauvegarde de 4 Mo fait sur": "Rewrites the whole flash with a 4 MB backup file made on",
   "ce": "this",
   "TICMeter.": "TICMeter.",
