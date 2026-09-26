@@ -471,8 +471,9 @@ static void zigbee_task(void *pvParameters)
     snprintf((char *)SWBuildID, sizeof(SWBuildID), "%c%s", strlen(app_desc->version), app_desc->version);
 
     char zigbee_date_code[50];
-    snprintf(zigbee_date_code + 1, sizeof(zigbee_date_code), "%s", BUILD_TIME);
-    zigbee_date_code[0] = strlen(BUILD_TIME);
+    // AAAAMMJJ-std : signale la version non officielle (correctif mode standard)
+    snprintf(zigbee_date_code + 1, sizeof(zigbee_date_code) - 1, "%.4s%.2s%.2s-std", BUILD_TIME, BUILD_TIME + 5, BUILD_TIME + 8);
+    zigbee_date_code[0] = strlen(zigbee_date_code + 1);
 
     esp_zb_basic_cluster_add_attr(esp_zb_basic_cluster, ESP_ZB_ZCL_ATTR_BASIC_APPLICATION_VERSION_ID, &ApplicationVersion);
     esp_zb_basic_cluster_add_attr(esp_zb_basic_cluster, ESP_ZB_ZCL_ATTR_BASIC_STACK_VERSION_ID, &StackVersion);
@@ -799,7 +800,9 @@ esp_err_t zigbee_send(linky_data_t *data)
     if (zigbee_state == ZIGBEE_COMMISIONING_ERROR)
     {
         ESP_LOGE(TAG, "Zigbee commisioning error: retrying for the next time");
+        esp_zb_lock_acquire(portMAX_DELAY);
         esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_NETWORK_STEERING);
+        esp_zb_lock_release();
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -953,7 +956,10 @@ esp_err_t zigbee_send(linky_data_t *data)
                 continue;
                 break;
             }
+            // verrou de la pile Zigbee : une lecture d'attribut par le coordinateur peut arriver en même temps
+            esp_zb_lock_acquire(portMAX_DELAY);
             ret = zigbee_report_attribute(LINKY_TIC_ENDPOINT, linky_label_list[i].clusterID, linky_label_list[i].attributeID, ptr_value, size);
+            esp_zb_lock_release();
             if (ret != ESP_OK)
             {
                 ESP_LOGE(TAG, "Report attribute failed: 0x%x", ret);
@@ -962,7 +968,9 @@ esp_err_t zigbee_send(linky_data_t *data)
         else
         {
             ESP_LOGI(TAG, "Set attribute cluster: Status: 0x%X 0x%x, attribute: 0x%x, name: %s, value: %lu", status, linky_label_list[i].clusterID, linky_label_list[i].attributeID, linky_label_list[i].label, *(uint32_t *)ptr_value);
+            esp_zb_lock_acquire(portMAX_DELAY);
             status = esp_zb_zcl_set_attribute_val(LINKY_TIC_ENDPOINT, linky_label_list[i].clusterID, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, linky_label_list[i].attributeID, ptr_value, false);
+            esp_zb_lock_release();
             if (status != ESP_ZB_ZCL_STATUS_SUCCESS)
             {
                 ESP_LOGE(TAG, "Set attribute failed: 0x%x", status);

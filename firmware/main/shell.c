@@ -28,6 +28,7 @@
 #include "esp_pm.h"
 #include "led.h"
 #include "tuya.h"
+#include "soft_rx.h"
 /*==============================================================================
  Local Define
 ===============================================================================*/
@@ -119,6 +120,9 @@ static int start_test_command(int argc, char **argv);
 
 static int zigbee_reset_command(int argc, char **argv);
 static int skip_command(int argc, char **argv);
+static int soft_rx_stats_command(int argc, char **argv);
+static int set_rx_skew_command(int argc, char **argv);
+static int set_std_labels_command(int argc, char **argv);
 static int stop_main(int argc, char **argv);
 
 static int start_pairing_command(int argc, char **argv);
@@ -198,6 +202,11 @@ static const shell_cmd_t shell_cmds[] = {
     {"pm-stats",                    "Power management stats",                   &pm_stats_command,                  0, {}, {}},
     {"wifi-scan",                   "Scan for wifi networks",                   &wifi_scan_command,                 0, {}, {}},
     {"ping",                        "Ping",                                     &ping_command,                      1, {"<host>"}, {"Host to ping"}},
+
+    // récepteur logiciel du mode standard (version non officielle)
+    {"soft-rx-stats",               "Soft RX: stats and current skew",          &soft_rx_stats_command,             0, {}, {}},
+    {"set-rx-skew",                 "Soft RX: force skew in us (0 = auto)",     &set_rx_skew_command,               1, {"<us>"}, {"0 = auto calibration, 1..60 = forced skew"}},
+    {"set-std-labels",              "STD labels: 0 = cleaned, 1 = raw",         &set_std_labels_command,            1, {"<raw>"}, {"0 = trim/collapse spaces (default), 1 = raw Linky text"}},
 
 };
 const uint8_t shell_cmds_num = sizeof(shell_cmds) / sizeof(shell_cmd_t);
@@ -943,6 +952,50 @@ static int zigbee_reset_command(int argc, char **argv)
   printf("Resetting Zigbee config\n");
   zigbee_factory_reset();
   printf("Zigbee config reset\n");
+  return 0;
+}
+
+static int soft_rx_stats_command(int argc, char **argv)
+{
+  soft_rx_stats_t s;
+  soft_rx_get_stats(&s, false);
+  printf("Soft RX: %s\n", soft_rx_active() ? "active (STD)" : "inactive");
+  printf("Skew: %ld us (%s)\n", s.skew_us, config_values.rx_skew ? "forced" : "auto");
+  printf("Last calibration score: %lu/1000 (ok %lu, ko %lu)\n", s.cal_score, s.cal_ok, s.cal_ko);
+  printf("Bytes: %lu, parity errors: %lu, frame errors: %lu, short runs: %lu, glitches: %lu, edge overflow: %lu\n",
+         s.bytes, s.parity_err, s.frame_err, s.short_runs, s.glitches, s.edge_overflow);
+  printf("STD labels: %s\n", config_values.std_raw_labels ? "raw" : "cleaned");
+  return 0;
+}
+
+static int set_rx_skew_command(int argc, char **argv)
+{
+  if (argc != 2)
+  {
+    return ESP_ERR_INVALID_ARG;
+  }
+  int us = atoi(argv[1]);
+  if (us < 0 || us > 60)
+  {
+    printf("Value must be 0 (auto) or 1..60 us\n");
+    return ESP_ERR_INVALID_ARG;
+  }
+  config_values.rx_skew = us;
+  config_write();
+  soft_rx_force_skew(us ? us : -1);
+  printf("Skew saved: %s\n", us ? argv[1] : "auto");
+  return 0;
+}
+
+static int set_std_labels_command(int argc, char **argv)
+{
+  if (argc != 2)
+  {
+    return ESP_ERR_INVALID_ARG;
+  }
+  config_values.std_raw_labels = atoi(argv[1]) ? 1 : 0;
+  config_write();
+  printf("STD labels: %s (applied on next reading)\n", config_values.std_raw_labels ? "raw" : "cleaned");
   return 0;
 }
 

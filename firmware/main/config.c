@@ -96,6 +96,8 @@ static struct config_item_t config_items[] = {
     {"sleep",           UINT8,  &config_values.sleep,           sizeof(config_values.sleep),            &config_handle},
     {"index-offset",    BLOB,   &config_values.index_offset,    sizeof(config_values.index_offset),     &config_handle},
     {"boot-pairing",    UINT8,  &config_values.boot_pairing,    sizeof(config_values.boot_pairing),     &config_handle},
+    {"std-raw-labels",  UINT8,  &config_values.std_raw_labels,  sizeof(config_values.std_raw_labels),   &config_handle},
+    {"rx-skew",         UINT8,  &config_values.rx_skew,         sizeof(config_values.rx_skew),          &config_handle},
 
 };
 static const int32_t config_items_size = sizeof(config_items) / sizeof(config_items[0]);

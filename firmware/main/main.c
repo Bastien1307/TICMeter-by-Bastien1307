@@ -227,6 +227,12 @@ void app_main(void)
     power_set_zigbee();
     zigbee_init_stack();
     vTaskDelay(2000 / portTICK_PERIOD_MS);
+    // console en Zigbee seulement sur USB (aucun coût sur l'alimentation du Linky),
+    // et après la pile Zigbee : lancée avant, elle bloque son initialisation
+    if (gpio_vusb_connected())
+    {
+      shell_init();
+    }
     break;
   case MODE_TUYA:
     if (config_values.pairing_state != TUYA_PAIRED)

@@ -5,10 +5,13 @@
 cmake_minimum_required(VERSION 3.16)
 message(STATUS "Building: ${PROJECT}")
 
-execute_process(COMMAND pip install jsmin csscompressor htmlmin zigpy)
+# htmlmin2 : reprise maintenue de htmlmin, qui ne s'installe plus en Python 3.13
+execute_process(COMMAND pip install jsmin csscompressor htmlmin2 zigpy)
 execute_process(COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/scripts/compress.py ${CMAKE_CURRENT_SOURCE_DIR}/src_data ${CMAKE_CURRENT_SOURCE_DIR}/data)
 
 set(EXTRA_COMPONENT_DIRS $ENV{IDF_PATH}/examples/bluetooth/nimble/common/nimble_peripheral_utils)
+# Version non officielle (correctif mode standard) : au-dessus de toute version GammaTroniques
+set(PROJECT_VER "V3.3.0-std")
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(TICMeter)
 
@@ -19,7 +22,7 @@ execute_process(COMMAND git describe --tags --always --dirty OUTPUT_VARIABLE GIT
 
 add_custom_command(OUTPUT /tmp/app.bin
 DEPENDS "${build_dir}/.bin_timestamp"
-COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/create-ota.py -m 65535 -i 200 -v ${GIT_VERSION} ${CMAKE_CURRENT_SOURCE_DIR}/build/TICMeter.bin ${CMAKE_CURRENT_SOURCE_DIR}/build/storage.bin ${CMAKE_CURRENT_SOURCE_DIR}/build/TICMeter.ota
+COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/create-ota.py -m 65535 -i 200 -v ${PROJECT_VER} ${CMAKE_CURRENT_SOURCE_DIR}/build/TICMeter.bin ${CMAKE_CURRENT_SOURCE_DIR}/build/storage.bin ${CMAKE_CURRENT_SOURCE_DIR}/build/TICMeter.ota
 COMMENT "Creating OTA file"
 )
 

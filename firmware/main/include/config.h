@@ -154,6 +154,8 @@ typedef struct
     uint8_t sleep;
     index_offset_t index_offset;
     uint8_t boot_pairing;
+    uint8_t std_raw_labels; // 0 : libellés du mode standard nettoyés (défaut), 1 : texte brut du Linky
+    uint8_t rx_skew;        // 0 : calibration automatique (défaut), 1..60 : retard imposé en µs
 } config_t;
 
 typedef struct
@@ -170,9 +172,8 @@ typedef struct
 ==============================================================================*/
 extern const char *const MODES[];
 
-#ifdef GIT_TAG
+// version non officielle : toujours en production, même hors commit tagué
 #define PRODUCTION 1
-#endif
 
 extern config_t config_values;
 extern efuse_t efuse_values;

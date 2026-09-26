@@ -16,6 +16,7 @@
 // #define LOG_LOCAL_LEVEL ESP_LOG_VERBOSE
 #include "esp_log.h"
 #include <linky.h>
+#include "soft_rx.h"
 #include <config.h>
 #include <time.h>
 #include <gpio.h>
@@ -443,8 +444,19 @@ static void uart_event_task(void *pvParameters)
             be full.*/
             case UART_DATA:
                 uint32_t free_space = (LINKY_BUFFER_SIZE - 1) - linky_frame_size;
-                uint32_t to_read = (free_space > event.size) ? event.size : free_space;
-                uart_read_bytes(LINKY_UART, linky_buffer + linky_frame_size, to_read, 500 / portTICK_PERIOD_MS);
+                uint32_t to_read;
+                if (soft_rx_active())
+                {
+                    // octets UART corrompus : on les jette, le récepteur logiciel fournit les bons
+                    static uint8_t discard[256];
+                    uart_read_bytes(LINKY_UART, discard, event.size > sizeof discard ? sizeof discard : event.size, 0);
+                    to_read = soft_rx_read(linky_buffer + linky_frame_size, free_space);
+                }
+                else
+                {
+                    to_read = (free_space > event.size) ? event.size : free_space;
+                    uart_read_bytes(LINKY_UART, linky_buffer + linky_frame_size, to_read, 500 / portTICK_PERIOD_MS);
+                }
                 linky_frame_size += to_read;
                 // esp_rom_printf("add %ld:\n%s\n", to_read, linky_buffer + linky_frame_size - to_read);
                 if (linky_frame_size >= LINKY_DECODE_LEN)
@@ -531,6 +543,11 @@ void linky_init(int RX)
         break;
     }
 
+    if (linky_mode == MODE_STD) // cas où le mode était déjà STD : linky_set_mode sort tôt
+    {
+        soft_rx_start(linky_uart_rx);
+    }
+
     if (linky_pm_lock == NULL)
     {
         esp_err_t err = esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "linky", &linky_pm_lock);
@@ -611,6 +628,7 @@ void linky_set_mode(linky_mode_t newMode)
         baud_rate = 9600;
         linky_mode = MODE_STD;
         linky_group_separator = 0x09;
+        soft_rx_start(linky_uart_rx);
         break;
     case MODE_HIST:
     default:
@@ -618,6 +636,7 @@ void linky_set_mode(linky_mode_t newMode)
         baud_rate = 1200;
         linky_mode = MODE_HIST;
         linky_group_separator = 0x20;
+        soft_rx_stop();
         break;
     }
 
@@ -819,7 +838,7 @@ static char linky_decode()
         {
             // error: checksum is not correct, skip the field
             linky_decode_checksum_error++;
-            // ESP_LOGE(TAG, "%s = %s: checksum is not correct: %s, expected: %c", label, value, checksum, linky_checksum(label, value, time));
+            ESP_LOGV(TAG, "%s = %s: checksum is not correct: %s, expected: %c", label, value, checksum, linky_checksum(label, value, time));
             continue;
         }
         else
@@ -838,6 +857,25 @@ static char linky_decode()
                     {
                     case STRING:
                     {
+                        if (linky_mode == MODE_STD && !config_values.std_raw_labels)
+                        {
+                            // le Linky centre ses libellés sur 16 caractères ("  HEURE  PLEINE  ") :
+                            // on retire les espaces des bords et on réduit les doubles espaces,
+                            // sinon Z4D ne reconnaît pas le tarif ni le contrat
+                            char *src = value, *dst = value;
+                            while (*src == ' ')
+                                src++;
+                            while (*src)
+                            {
+                                if (*src == ' ' && (src[1] == ' ' || src[1] == 0))
+                                {
+                                    src++;
+                                    continue;
+                                }
+                                *dst++ = *src++;
+                            }
+                            *dst = 0;
+                        }
                         uint32_t size = strlen(value);
                         if (size > linky_label_list[j].size)
                         {
@@ -1204,6 +1242,7 @@ char linky_update(uint32_t timeout)
 
     esp_pm_lock_acquire(linky_pm_lock);
     linky_reading = 1;
+    soft_rx_resume();
     linky_same_feilds_count = 0;
     if (linky_mode > MODE_STD)
     {
@@ -1238,6 +1277,7 @@ char linky_update(uint32_t timeout)
         try++;
     }
     linky_reading = 0;
+    soft_rx_pause();
 
     linky_frame_size = 0; // clear the frame size
 
@@ -1679,6 +1719,9 @@ void linky_stats()
     ESP_LOGI(TAG, "Linky refresh rate: %d", config_values.refresh_rate);
     ESP_LOGI(TAG, "Linky decode count: %ld", linky_last_decode_count);
     ESP_LOGI(TAG, "Linky checksum error: %ld", linky_decode_checksum_error);
+    soft_rx_stats_t srs;
+    soft_rx_get_stats(&srs, true);
+    ESP_LOGI(TAG, "Soft RX: bytes=%lu parity=%lu frame=%lu short=%lu glitch=%lu edge_ovf=%lu skew=%ldus cal_score=%lu", srs.bytes, srs.parity_err, srs.frame_err, srs.short_runs, srs.glitches, srs.edge_overflow, srs.skew_us, srs.cal_score);
 }
 
 linky_value_rw_t *linky_get_value_rw(uint32_t index)

@@ -1,73 +1,173 @@
-# TICMeter
-
-![total commits](https://img.shields.io/github/commit-activity/t/GammaTroniques/TICMeter?style=flat-square)
-![last commit](https://img.shields.io/github/last-commit/GammaTroniques/TICMeter?style=flat-square)
-![release](https://img.shields.io/github/v/release/GammaTroniques/TICMeter?style=flat-square)
-![issues](https://img.shields.io/github/issues/GammaTroniques/TICMeter?style=flat-square)
-![pullrequests](https://img.shields.io/github/issues-pr/GammaTroniques/TICMeter?style=flat-square)
-
-## License
+# TICMeter — version by Bastien1307 (non officielle)
 
 [![licence](https://img.shields.io/badge/License-CC_BY--NC_4.0-lightgrey.svg?style=for-the-badge)](https://creativecommons.org/licenses/by-nc/4.0/)
 
-## About the project
+> **Version non officielle** du firmware du [TICMeter de GammaTroniques](https://github.com/GammaTroniques/TICMeter).
+> GammaTroniques n'est ni l'auteur ni responsable de ces modifications et n'apporte aucun support sur cette version.
+>
+> *Unofficial build of the [GammaTroniques TICMeter](https://github.com/GammaTroniques/TICMeter) firmware.
+> GammaTroniques is neither the author of these changes nor responsible for them. English below.*
 
-**TICMeter** is a project to collect data from a **Linky meter** and send them to a **web server** or a **home automation server**. The system is powered by the pins A of the Linky meter and with the help of a supercapacitor.
+---
 
-<img src="https://github.com/GammaTroniques/TICMeter/assets/47485034/ba21001a-b0af-40f7-bdd5-e8c46a0378e7" width=20% height=50%>
+## 🇫🇷 Français
 
-More info about the product: https://www.kisskissbankbank.com/fr/projects/ticmeter
+### Le problème corrigé
 
-- Work with :
+Avec un Linky en **mode TIC standard** (9600 bauds), certains TICMeter lisent des trames
+massivement corrompues : plus de mille erreurs de contrôle (checksum) par lecture, une
+dizaine de champs seulement décodés sur une quarantaine, contrat « INCONNU », index qui
+perdent un chiffre, et en Zigbee des attributs qui manquent ou des envois qui échouent.
+En **mode historique** (1200 bauds), tout fonctionne.
 
-[![zigbee](https://img.shields.io/badge/zigbee-F22547?style=for-the-badge&logo=zigbee&logoColor=white)](https://en.wikipedia.org/wiki/Zigbee)
-[![mqtt](https://img.shields.io/badge/mqtt-660066?style=for-the-badge&logo=mqtt&logoColor=white)](https://mqtt.org/)
-[![web](https://img.shields.io/badge/web-0050C9?style=for-the-badge&logo=web&logoColor=white)](https://gammatroniques.fr/)
-[![tuya](https://img.shields.io/badge/tuya-FF4800?style=for-the-badge&logo=tuya&logoColor=white)](https://www.tuya.com/)
+### La cause
 
-- Compatible with :
+Mesures faites sur la broche d'entrée : l'étage qui démodule le signal du Linky
+**remonte en retard**. Chaque niveau haut arrive raccourci d'environ 40 µs, et le niveau bas
+voisin rallongé d'autant. À 1200 bauds (833 µs par bit), c'est sans effet. À 9600 bauds
+(104 µs par bit), l'UART de l'ESP32, qui lit chaque bit en son milieu, tombe à côté :
+des « 1 » sont lus comme des « 0 », toujours sur les mêmes caractères.
 
-[![home-assistant](https://img.shields.io/badge/home%20assistant-%2341BDF5.svg?style=for-the-badge&logo=home-assistant&logoColor=white)](https://www.home-assistant.io/)
-[![jeedom](https://img.shields.io/badge/jeedom-94CA02?style=for-the-badge&logo=jeedom&logoColor=white)](https://www.jeedom.com/)
-[![domoticz](https://img.shields.io/badge/domoticz-0078C1?style=for-the-badge&logo=domoticz&logoColor=white)](https://www.domoticz.com/)
+Le décalage est régulier : **rien n'est perdu**, les durées restent parfaitement séparables.
 
-- Created with : 
+### La correction
 
-[![espidf](https://img.shields.io/badge/espressif%20idf-E7352C?style=for-the-badge&logo=espressif&logoColor=white)](https://github.com/espressif/esp-idf)
-[![vscode](https://img.shields.io/badge/visual%20studio%20code-0078d7?style=for-the-badge&logo=visual-studio-code&logoColor=white)](https://www.espressif.com/)
+En mode standard, un **récepteur logiciel** remplace l'UART :
 
-## Installation
+- il horodate chaque front du signal sur la broche d'entrée ;
+- il **mesure lui-même le retard** au début de chaque lecture (calibration automatique,
+  de 0 à 60 µs) et le compense ;
+- il reconstruit les octets (7 bits, parité paire) et les passe au décodeur d'origine.
 
-#### ESP32 :satellite:
-Compile and send [`firmware`](/firmware) files to the ESP32-C6
+Il n'est actif que pendant les fenêtres de lecture, pour ne pas peser sur l'énergie
+fournie par le Linky. Le mode historique utilise toujours l'UART, sans changement.
 
-## Demo
+**Résultat mesuré** : de ~1 300 erreurs de checksum par lecture à **0 à 3**, 41 champs
+décodés au lieu de 11, contrat reconnu, bascule heures pleines / heures creuses remontée
+dans Domoticz (plugin Zigbee for Domoticz), sur l'alimentation du Linky seule.
 
-#### Web example
+### Autres changements
 
-<img src="img/WebPage.png" alt="webpageimg" height="500"/>
+- **Libellés du mode standard nettoyés** : le Linky envoie des textes centrés sur
+  16 caractères (`  HEURE  PLEINE  `). Les espaces en bord sont retirés et les espaces
+  doubles réduits (`HEURE PLEINE`) : les mots ne changent pas, seul le remplissage part.
+  Sans ça, Zigbee for Domoticz ne reconnaît ni le tarif en cours ni le contrat.
+  **Réglable** : `set-std-labels 1` rend le texte brut du Linky.
+- **Console disponible en mode Zigbee**, seulement quand l'USB est branché (aucun coût sur
+  l'alimentation du Linky). Nouvelles commandes :
+  `soft-rx-stats` (statistiques et retard mesuré),
+  `set-rx-skew <µs>` (retard imposé, `0` = calibration automatique),
+  `set-std-labels <0|1>`.
+- **Zigbee** : les mises à jour d'attributs prennent désormais le verrou de la pile Zigbee
+  (il manquait : accès concurrent possible avec une lecture du coordinateur).
+- **Version 3.3.0** (`V3.3.0-std`), au-dessus de toute version officielle : ni la page de
+  mise à jour GammaTroniques ni un coordinateur Zigbee ne proposeront de « mise à jour »
+  qui écraserait la correction. Le champ Zigbee *Date code* se termine par `-std`.
+- Compilation : `htmlmin2` au lieu de `htmlmin`, qui ne s'installe plus en Python 3.13.
 
-#### MQTT example - Home Assistant
+Détail : [CHANGELOG.md](CHANGELOG.md).
 
-<img src="img/MQTT_Example.png" alt="mqttexample" height="600"/>
+### Installation
 
-#### Zigbee example - Home Assistant
+Testé sur un TICMeter matériel 3.4.2 (ESP32-C6), Linky monophasé, mode Zigbee.
 
-<img src="img/Zigbee_Example.png" alt="zigbeeexample" height="600"/>
+**Avant tout, sauvegarder la flash complète** (retour possible à l'identique) :
 
-#### Tuya example
+```bash
+esptool.py --chip esp32c6 -p <PORT> read_flash 0 0x400000 sauvegarde_ticmeter.bin
+```
 
-<img src="img/Tuya_Example.png" alt="tuyaexample" height="600"/>
+**Flasher** les fichiers de la [release](../../releases) (la configuration et l'appairage
+Zigbee sont conservés : la zone NVS n'est pas touchée) :
 
-## Authors
+```bash
+esptool.py --chip esp32c6 -p <PORT> -b 460800 write_flash \
+  0x10000 ota_data_initial.bin \
+  0x17000 storage.bin \
+  0x30000 TICMeter.bin
+```
 
-- [@Dorian.local/](https://github.com/xmow49)
-- [@Noah_](https://github.com/NoahJst)
+`<PORT>` : par exemple `/dev/cu.usbmodem2101` (macOS), `/dev/ttyACM0` (Linux), `COM3` (Windows).
+Ne pas laisser la page de mise à jour GammaTroniques ouverte : elle monopolise le port.
 
-[![siteweb](https://img.shields.io/badge/GammaTroniques-EE6B00?style=for-the-badge&logoColor=white)](https://gammatroniques.fr/)
-[![youtube](https://img.shields.io/youtube/channel/subscribers/UCnUqy6VAEgcNR745mNsyTHg?style=for-the-badge&logo=youtube&label=YouTube&labelColor=FF0000&color=333333)](https://www.youtube.com/gammatroniques)
+**Mise à jour par Zigbee** : le fichier `TICMeter.ota` de la release est prévu pour une
+mise à jour sans fil depuis le coordinateur. **Non testé à ce jour.**
 
->__Note__  
-This program is still under development, it is possible that errors and problems are found in the code
+**Revenir au firmware officiel** : depuis la page de mise à jour GammaTroniques, ou en
+réécrivant la sauvegarde (`write_flash 0 sauvegarde_ticmeter.bin`).
 
-:shipit:
+### Compiler
+
+ESP-IDF **v5.2.1**, cible `esp32c6`. Appliquer à ESP-IDF la seule modification utile du
+correctif fourni dans `firmware/patch/` : dans `components/esp_hw_support/sleep_modes.c`,
+remplacer `CONFIG_ESP_CONSOLE_UART_BAUDRATE` par `115200` dans `UART_FLUSH_US_PER_CHAR`
+(le fichier fourni vient d'une autre version d'ESP-IDF et ne compile pas tel quel).
+
+```bash
+cd firmware
+idf.py build
+```
+
+### Soutenir
+
+Ce firmware est gratuit et complet, sans rien de réservé. Si ce travail vous est utile,
+vous pouvez m'offrir un café, **si vous le souhaitez** :
+
+**[☕ paypal.me/sebastienRanc](https://paypal.me/sebastienRanc)**
+
+> Choisir l'option **« Entre proches »** (plutôt que « Biens et services ») pour que le don
+> arrive sans frais.
+
+Et une pensée pour **[GammaTroniques](https://github.com/GammaTroniques/TICMeter)**,
+qui a conçu le TICMeter et publié son firmware.
+
+---
+
+## 🇬🇧 English
+
+### What this fixes
+
+With a Linky meter in **standard TIC mode** (9600 baud), some TICMeters read heavily
+corrupted frames: over a thousand checksum errors per reading, only about ten fields
+decoded out of forty, contract "UNKNOWN", indexes losing a digit, missing Zigbee attributes.
+**Historical mode** (1200 baud) works fine.
+
+**Cause**: the input demodulator stage releases late. Every high level arrives about 40 µs
+short, and the neighbouring low level as much longer. Harmless at 1200 baud, but at
+9600 baud (104 µs per bit) the ESP32 UART, which samples mid-bit, reads some 1s as 0s.
+The distortion is regular: nothing is lost.
+
+**Fix**: in standard mode, a **software receiver** replaces the UART. It timestamps every
+edge, **measures the delay itself** at the start of each reading (automatic calibration,
+0–60 µs), compensates it, rebuilds the 7E1 bytes and hands them to the original decoder.
+It only runs during reading windows. Historical mode still uses the UART.
+
+**Measured result**: from ~1,300 checksum errors per reading down to **0–3**, 41 fields
+instead of 11, contract recognised, peak / off-peak switching reported to Domoticz.
+
+**Other changes**: standard-mode labels trimmed (`  HEURE  PLEINE  ` → `HEURE PLEINE`,
+configurable with `set-std-labels 1`); console available in Zigbee mode when USB is
+plugged (`soft-rx-stats`, `set-rx-skew`, `set-std-labels`); Zigbee attribute updates now
+take the Zigbee stack lock; version **3.3.0** (`V3.3.0-std`); `htmlmin2` build dependency.
+See [CHANGELOG.md](CHANGELOG.md).
+
+**Install**: back up the whole flash first
+(`esptool.py --chip esp32c6 -p <PORT> read_flash 0 0x400000 backup.bin`), then flash the
+[release](../../releases) files at `0x10000` (`ota_data_initial.bin`), `0x17000`
+(`storage.bin`) and `0x30000` (`TICMeter.bin`). Configuration and Zigbee pairing are kept.
+Zigbee OTA file provided but **not tested yet**.
+
+**Support**: this firmware is free and complete. If it helps you, you may buy me a coffee,
+**only if you wish**: **[☕ paypal.me/sebastienRanc](https://paypal.me/sebastienRanc)**
+(please pick "Friends and family").
+
+---
+
+## Licence / License
+
+[CC BY-NC 4.0](LICENCE.md) — comme le projet d'origine / same as the original project.
+Œuvre originale / Original work: © [GammaTroniques](https://github.com/GammaTroniques/TICMeter).
+Modifications © Bastien1307, listées dans / listed in [CHANGELOG.md](CHANGELOG.md).
+Usage commercial interdit / No commercial use.
+
+README d'origine / Original README: [README.GammaTroniques.md](README.GammaTroniques.md).
