@@ -5,6 +5,14 @@ Modifications apportées au firmware de [GammaTroniques](https://github.com/Gamm
 
 *Changes made to the GammaTroniques firmware, based on its `main` branch (commit `bd2da3f`).*
 
+## V3.3.1-std — 2026-09-26
+
+### Corrigé / Fixed
+
+- `soft-rx-stats` : le score et le nombre de calibrations ne sont plus remis à zéro à chaque
+  résumé de lecture (seuls les compteurs du cycle le sont).
+  *Calibration score no longer reset by the reading summary.*
+
 ## Page web — 2026-09-26
 
 - Page unique (`docs/`, publiée sur GitHub Pages) pour connecter le TICMeter en USB depuis le

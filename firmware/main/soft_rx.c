@@ -352,9 +352,13 @@ void soft_rx_get_stats(soft_rx_stats_t *out, bool reset)
     *out = stats;
     if (reset)
     {
-        uint32_t ovf = stats.edge_overflow;
+        // on remet à zéro les compteurs du cycle, pas l'état de la calibration
+        soft_rx_stats_t keep = stats;
         memset(&stats, 0, sizeof stats);
-        stats.edge_overflow = ovf;
+        stats.edge_overflow = keep.edge_overflow;
         stats.skew_us = skew_us;
+        stats.cal_score = keep.cal_score;
+        stats.cal_ok = keep.cal_ok;
+        stats.cal_ko = keep.cal_ko;
     }
 }

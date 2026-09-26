@@ -8,6 +8,24 @@
 > *Unofficial build of the [GammaTroniques TICMeter](https://github.com/GammaTroniques/TICMeter) firmware.
 > GammaTroniques is neither the author of these changes nor responsible for them. English below.*
 
+## 🌐 Page web : connexion, mise à jour et réglages / Web page: connect, update, configure
+
+### 👉 **https://bastien1307.github.io/TICMeter-by-Bastien1307/**
+
+Branchez le TICMeter en USB, ouvrez la page dans **Chrome, Edge ou Opera** (ordinateur), cliquez
+sur « Connecter le TICMeter » :
+
+- **État** : version du firmware, mode de communication, mode TIC, contrat, dernière lecture ;
+- **Sauvegarde / restauration** de la flash complète ;
+- **Mise à jour** vers la dernière version (configuration et appairage Zigbee conservés) ;
+- **Réglages** : mode de communication (Zigbee, MQTT, Web, Tuya si le TICMeter a ses clés),
+  mode TIC, intervalle d'envoi, Wi-Fi, MQTT, libellés et récepteur du mode standard ;
+- **Console** : journal du TICMeter, copiable ou enregistrable.
+
+*Plug the TICMeter over USB, open the page in Chrome, Edge or Opera (desktop) and click
+"Connecter": status, flash backup / restore, update (settings and Zigbee pairing kept),
+configuration and console, all from the browser.*
+
 ---
 
 ## 🇫🇷 Français
