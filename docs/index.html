@@ -178,6 +178,7 @@
     </div>
     <p class="muted" style="font-size:.85rem">La mise à jour garde la configuration et l'appairage Zigbee.
       La sauvegarde permet de revenir exactement à l'état actuel (fichier à conserver précieusement).</p>
+    <p class="muted" style="font-size:.8rem">Après chaque mise à jour réussie, un compteur anonyme de la version installée est augmenté de 1 (aucune donnée sur vous ni sur votre TICMeter).</p>
     <div id="flash-progress" class="hidden">
       <p id="flash-step" style="margin:8px 0 4px"></p>
       <progress id="flash-bar" max="100" value="0"></progress>
@@ -752,7 +753,7 @@ async function backup() {
   await waitAfterReboot();
 }
 
-async function writeFiles(files, label) {
+async function writeFiles(files, label, onWritten) {
   const ok = await withLoader(async (loader) => {
     await loader.writeFlash({
       fileArray: files, flashMode: "keep", flashFreq: "keep", flashSize: "keep",
@@ -764,9 +765,18 @@ async function writeFiles(files, label) {
   });
   $("flash-progress").classList.add("hidden");
   stopWaitBar();
-  if (!ok) { await recoverAfterFailure(); return; }
+  if (!ok) { await recoverAfterFailure(); return false; }
+  onWritten?.(); // écriture vérifiée : on n'attend pas le redémarrage
   $("flash-result").innerHTML = `<p class="notice ok">${label} ${tr("terminée et vérifiée. Le TICMeter redémarre (environ 1 minute).", "done and verified. The TICMeter is restarting (about 1 minute).")}</p>`;
   await waitAfterReboot();
+  return true;
+}
+
+// Compteur anonyme : +1 par mise à jour réussie, un compteur par version (service Abacus).
+// Ne bloque jamais la mise à jour.
+function countUpdate(version) {
+  const key = ("update-" + version).replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 64);
+  fetch(`https://abacus.jasoncameron.dev/hit/ticmeter-by-bastien1307/${key}`).catch(() => {});
 }
 
 async function update() {
@@ -783,7 +793,8 @@ async function update() {
     if (!r.ok) { $("flash-result").innerHTML = `<p class="notice err">${tr("Téléchargement impossible", "Download failed")} : ${p.path}</p>`; return; }
     files.push({ data: new Uint8Array(await r.arrayBuffer()), address: p.offset });
   }
-  await writeFiles(files, tr(`Mise à jour vers ${manifest.version}`, `Update to ${manifest.version}`));
+  await writeFiles(files, tr(`Mise à jour vers ${manifest.version}`, `Update to ${manifest.version}`),
+    () => countUpdate(manifest.version));
 }
 
 async function restore() {
