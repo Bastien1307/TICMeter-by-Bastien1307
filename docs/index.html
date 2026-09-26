@@ -58,6 +58,13 @@
     .muted { color: var(--muted); }
     @media (max-width: 520px) { .field-row { grid-template-columns: 1fr; } }
     /* bouton de soutien, toujours visible */
+    /* barre collante en haut : visible une fois la section 1 dépassée */
+    .topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 20; display: flex; flex-wrap: wrap; gap: 10px;
+      align-items: center; justify-content: space-between; background: var(--card);
+      padding: 10px max(16px, calc((100% - 828px) / 2));
+      border-bottom: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,.12); }
+    .topbar .row { gap: 8px; }
+    main { padding-top: 110px; }
     .support-wrap { position: sticky; bottom: 16px; z-index: 10; display: flex; justify-content: flex-end;
       margin-top: 8px; pointer-events: none; }
     .support { pointer-events: auto; display: inline-flex; align-items: center;
@@ -82,6 +89,19 @@
     sur ordinateur (Windows, macOS, Linux, ChromeOS). Safari, Firefox, Brave et les téléphones ne sont pas compatibles.
   </div>
 
+  <div id="topbar" class="topbar">
+    <span id="topbar-status" class="muted">TICMeter non connecté</span>
+    <div class="row">
+      <button id="btn-top-connect" class="primary">Connecter le TICMeter</button>
+      <button id="btn-top-reboot" class="primary hidden">Redémarrer le TICMeter</button>
+      <button id="btn-top-disconnect" class="hidden">Déconnecter le TICMeter</button>
+    </div>
+    <div id="wait-reading" class="hidden" style="flex-basis:100%">
+      <p id="wait-text" class="muted" style="margin:0 0 4px;font-size:.85rem"></p>
+      <progress id="wait-bar" max="100" value="0"></progress>
+    </div>
+  </div>
+
   <!-- Connexion -->
   <section class="card" id="connect-card">
     <h2>1. Connexion</h2>
@@ -89,7 +109,7 @@
       puis cliquez sur « Connecter ». Choisissez le port nommé <em>USB JTAG/serial debug unit</em>.</p>
     <div class="row">
       <button class="primary" id="btn-connect">Connecter le TICMeter</button>
-      <button id="btn-disconnect" class="hidden">Déconnecter</button>
+      <button id="btn-disconnect" class="hidden">Déconnecter le TICMeter</button>
       <span id="conn-status" class="muted">Non connecté</span>
     </div>
     <p class="muted" style="font-size:.85rem;margin:10px 0 0">
@@ -123,9 +143,9 @@
       <div class="kv"><span>Récepteur mode standard</span><span id="st-softrx">—</span></div>
       <div class="kv"><span>Retard compensé</span><span id="st-skew">—</span></div>
     </div>
-    <div id="wait-reading" class="hidden" style="margin-top:14px">
-      <p id="wait-text" class="muted" style="margin:0 0 4px;font-size:.9rem"></p>
-      <progress id="wait-bar" max="100" value="0"></progress>
+    <div id="st-progress" class="hidden" style="margin-top:14px">
+      <p id="st-progress-text" class="muted" style="margin:0 0 4px;font-size:.9rem"></p>
+      <progress id="st-progress-bar" max="100" value="0"></progress>
     </div>
   </section>
 
@@ -291,7 +311,8 @@ let manifest = null;
 let state = {};
 let consoleOk = false;
 let backupDone = false;
-let rebooting = false;    // redémarrage attendu : le port USB va disparaître puis revenir
+let rebooting = false;
+let rebootNeeded = false; // un réglage enregistré attend un redémarrage    // redémarrage attendu : le port USB va disparaître puis revenir
 
 // ---------------------------------------------------------------- journal
 const logEl = $("log");
@@ -391,6 +412,7 @@ class SerialLink {
 function pill(text, cls) { return `<span class="pill ${cls}">${text}</span>`; }
 
 function renderStatus() {
+  if (typeof updateTopbar === "function") updateTopbar();
   $("st-version").textContent = state.version || "—";
   $("st-mode").textContent = state.mode != null ? (MODES[state.mode] || `Mode ${state.mode}`) : "—";
   $("st-linky").textContent = state.linkyMode != null
@@ -465,6 +487,15 @@ function renderUpdate() {
   $("btn-update").textContent = cmp === 0 ? "Réinstaller" : "Mettre à jour";
 }
 
+// ---------------------------------------------------------------- progression recopiée dans la section 2
+function mirrorProgress() {
+  $("st-progress").classList.toggle("hidden", $("wait-reading").classList.contains("hidden"));
+  $("st-progress-text").textContent = $("wait-text").textContent;
+  $("st-progress-bar").value = $("wait-bar").value;
+}
+new MutationObserver(mirrorProgress).observe($("wait-reading"),
+  { attributes: true, childList: true, characterData: true, subtree: true });
+
 // ---------------------------------------------------------------- attente de la première lecture
 let waitTimer = null;
 function startWaitBar() {
@@ -513,6 +544,7 @@ async function connect() {
   $("btn-disconnect").classList.remove("hidden");
   for (const id of ["status-card", "update-card", "settings-card", "log-card"]) $(id).classList.remove("hidden");
   $("conn-status").textContent = "Connecté";
+  updateTopbar();
   await queryAll();
 }
 
@@ -561,17 +593,19 @@ async function reconnect(timeoutMs = 45000) {
 
 async function disconnect() {
   if (link) await link.close();
-  link = null; port = null; state = {}; consoleOk = false;
+  link = null; port = null; state = {}; consoleOk = false; rebootNeeded = false;
   stopWaitBar();
   $("btn-connect").classList.remove("hidden");
   $("btn-disconnect").classList.add("hidden");
   for (const id of ["status-card", "update-card", "settings-card", "log-card", "console-missing"]) $(id).classList.add("hidden");
   $("conn-status").textContent = "Non connecté";
+  updateTopbar();
 }
 
 // Après un redémarrage : vide l'état, affiche l'attente, attend la console puis relit tout.
 // La console démarre après la première lecture du Linky (~15 s) et, en Zigbee, après la pile Zigbee.
 async function waitAfterReboot() {
+  rebootNeeded = false;
   state = {};
   stopWaitBar();
   renderStatus();
@@ -621,6 +655,11 @@ function setProgress(step, pct) {
   $("flash-progress").classList.remove("hidden");
   $("flash-step").textContent = step;
   $("flash-bar").value = pct;
+  // même progression dans la barre du haut
+  clearInterval(waitTimer); waitTimer = null;
+  $("wait-reading").classList.remove("hidden");
+  $("wait-text").textContent = step;
+  $("wait-bar").value = pct;
 }
 
 async function withLoader(action) {
@@ -681,6 +720,7 @@ async function backup() {
   backupDone = true;
   $("flash-result").innerHTML = `<p class="notice ok">Sauvegarde téléchargée (${a.download}). Gardez ce fichier : il permet de revenir à l'état actuel.</p>`;
   $("flash-progress").classList.add("hidden");
+  stopWaitBar();
   await waitAfterReboot();
 }
 
@@ -695,6 +735,7 @@ async function writeFiles(files, label) {
     });
   });
   $("flash-progress").classList.add("hidden");
+  stopWaitBar();
   if (!ok) { await recoverAfterFailure(); return; }
   $("flash-result").innerHTML = `<p class="notice ok">${label} terminée et vérifiée. Le TICMeter redémarre (environ 1 minute).</p>`;
   await waitAfterReboot();
@@ -756,6 +797,7 @@ async function save(kind) {
   $("settings-result").innerHTML = failed
     ? `<p class="notice err">Le TICMeter a refusé ce réglage. Détail dans la console ci-dessous.</p>`
     : `<p class="notice ok">Enregistré. Redémarrez le TICMeter pour l'appliquer.</p>`;
+  if (!failed) { rebootNeeded = true; updateTopbar(); }
   if (kind === "wifi") $("set-wifipw").value = "";
   if (kind === "mqtt") $("set-mqtt-pw").value = "";
   await queryAll();
@@ -765,9 +807,26 @@ async function save(kind) {
 if (!("serial" in navigator)) {
   $("unsupported").classList.remove("hidden");
   $("btn-connect").disabled = true;
+  $("btn-top-connect").disabled = true;
 }
 $("btn-connect").onclick = connect;
 $("btn-disconnect").onclick = disconnect;
+$("btn-top-disconnect").onclick = disconnect;
+$("btn-top-connect").onclick = connect;
+$("btn-top-reboot").onclick = () => rebootAndWait($("settings-result"));
+
+// barre du haut : chaque bouton y apparaît une fois son bouton d'origine passé au-dessus de l'écran
+// Barre du haut : toujours affichée. Connecter / Déconnecter selon l'état ;
+// Redémarrer seulement si un réglage enregistré attend un redémarrage.
+function updateTopbar() {
+  const any = !!port;
+  $("btn-top-connect").classList.toggle("hidden", any);
+  $("btn-top-disconnect").classList.toggle("hidden", !any);
+  $("btn-top-reboot").classList.toggle("hidden", !(any && rebootNeeded));
+  $("topbar-status").textContent = port
+    ? "TICMeter connecté" + (state.version ? ` · ${state.version}` : "") + (state.mode != null ? ` · ${MODES[state.mode] || ""}` : "")
+    : "TICMeter non connecté";
+}
 $("btn-refresh").onclick = queryAll;
 $("btn-reboot-console").onclick = () => rebootAndWait($("flash-result"));
 $("btn-reboot").onclick = () => rebootAndWait($("settings-result"));
