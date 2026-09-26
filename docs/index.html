@@ -57,23 +57,42 @@
     a { color: var(--accent); }
     .muted { color: var(--muted); }
     @media (max-width: 520px) { .field-row { grid-template-columns: 1fr; } }
-    /* bouton de soutien, toujours visible */
-    /* barre collante en haut : visible une fois la section 1 dépassée */
+    /* barre du haut : état du TICMeter, connexion, progression */
     .topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 20; display: flex; flex-wrap: wrap; gap: 10px;
       align-items: center; justify-content: space-between; background: var(--card);
       padding: 10px max(16px, calc((100% - 828px) / 2));
       border-bottom: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,.12); }
     .topbar .row { gap: 8px; }
     main { padding-top: 110px; }
-    .support-wrap { position: sticky; bottom: 16px; z-index: 10; display: flex; justify-content: flex-end;
-      margin-top: 8px; pointer-events: none; }
-    .support { pointer-events: auto; display: inline-flex; align-items: center;
-      gap: 10px; padding: 10px 18px; border-radius: 16px; background: #ffc439; color: #1d2330; font-weight: 700;
-      text-decoration: none; box-shadow: 0 4px 14px rgba(0,0,0,.25); line-height: 1.25; }
-    .support span[aria-hidden] { font-size: 1.5rem; }
-    .support .label { font-weight: 500; }
-    .support:hover { filter: brightness(1.05); transform: translateY(-1px); }
-    @media (max-width: 520px) { .support { font-size: .9rem; padding: 9px 14px; } }
+    /* barre du bas : langue et soutien */
+    .bottombar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; gap: 10px;
+      align-items: center; justify-content: space-between; background: var(--card);
+      padding: 8px max(16px, calc((100% - 828px) / 2)); border-top: 1px solid var(--border);
+      box-shadow: 0 -4px 12px rgba(0,0,0,.10); }
+    main { padding-bottom: 90px; }
+    .support { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 10px;
+      background: #ffc439; color: #1d2330; font-weight: 600; text-decoration: none; line-height: 1.25; }
+    .support:hover { filter: brightness(1.05); }
+    .support span[aria-hidden] { font-size: 1.2rem; }
+    /* les deux phrases alternent au même endroit */
+    .support .label { display: inline-grid; }
+    .support .l1, .support .l2 { grid-area: 1 / 1; animation: swap 6s infinite; }
+    .support .l2 { animation-delay: -3s; }
+    /* clin d'œil : 🙂 puis 😉 tant que la 2e phrase est visible ; retour à 🙂 pendant qu'elle est cachée (50-92 %) */
+    .support .wink { display: inline-grid; }
+    .support .w0, .support .w1 { grid-area: 1 / 1; animation: 6s infinite; animation-delay: -3s; }
+    .support .w0 { animation-name: wink-open; }
+    .support .w1 { animation-name: wink-close; }
+    @keyframes wink-open { 0%, 18% { opacity: 1; } 19%, 70% { opacity: 0; } 71%, 100% { opacity: 1; } }
+    @keyframes wink-close { 0%, 18% { opacity: 0; } 19%, 70% { opacity: 1; } 71%, 100% { opacity: 0; } }
+    @keyframes swap { 0%, 42% { opacity: 1; } 50%, 92% { opacity: 0; } 100% { opacity: 1; } }
+    @media (max-width: 520px) { .support { font-size: .9rem; } }
+    @media (prefers-reduced-motion: reduce) {
+      .support .label { display: flex; flex-direction: column; }
+      .support .l1, .support .l2 { animation: none; }
+      .support .w0 { display: none; }
+      .support .w1 { animation: none; opacity: 1; }
+    }
   </style>
 </head>
 <body>
@@ -276,13 +295,6 @@
     </details>
   </section>
 
-  <div class="support-wrap">
-    <a class="support" href="https://paypal.me/sebastienRanc" target="_blank" rel="noopener"
-       title="Ce firmware est gratuit : un café si vous le souhaitez (choisir « Entre proches » sur PayPal)">
-      <span aria-hidden="true">☕</span><span class="label">Ce firmware vous rend service ?<br>Offrez-moi un café</span>
-    </a>
-  </div>
-
   <footer>
     Firmware TICMeter by Bastien1307 et cette page sous licence <a href="https://creativecommons.org/licenses/by-nc/4.0/deed.fr" target="_blank" rel="noopener">CC BY-NC 4.0</a>.
     TICMeter est un produit <a href="https://gammatroniques.fr" target="_blank" rel="noopener">GammaTroniques</a>,
@@ -291,16 +303,32 @@
   </footer>
 </main>
 
+<div class="bottombar">
+  <a class="support" href="https://paypal.me/sebastienRanc" target="_blank" rel="noopener"
+     title="Ce firmware est gratuit : un café si vous le souhaitez (choisir « Entre proches » sur PayPal)">
+    <span aria-hidden="true">☕</span><span class="label"><span class="l1">Ce firmware vous rend service ?</span> <span class="l2">Offrez-moi un café ! <span class="wink" aria-label="😉"><span class="w0">🙂</span><span class="w1">😉</span></span></span></span>
+  </a>
+  <button id="btn-lang" title="Switch to English">EN</button>
+</div>
+
 
 <script type="module">
 import { ESPLoader, Transport } from "./lib/esptool-bundle.js";
 import { md5 } from "./lib/md5.js";
+import { applyLang } from "./lib/i18n.js";
 import { parseLine, compareVersions, quoteArg, stripAnsi, maskSecrets } from "./lib/parse.js";
 
 const $ = (id) => document.getElementById(id);
+
+// Langue : français par défaut, anglais au choix (retenu dans le navigateur si possible)
+let lang = "fr";
+try { if (localStorage.getItem("ticmeter-lang") === "en") lang = "en"; } catch {}
+const urlLang = new URLSearchParams(location.search).get("lang");
+if (urlLang === "en" || urlLang === "fr") lang = urlLang;
+const tr = (fr, en) => (lang === "en" ? en : fr);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const MODES = { 1: "Web (HTTP)", 2: "MQTT", 3: "MQTT Home Assistant", 4: "Zigbee", 5: "Tuya" };
-const LINKY_MODES = { 0: "Historique", 1: "Standard", 2: "Automatique" };
+const LINKY_MODES = () => ({ 0: tr("Historique", "Historical"), 1: "Standard", 2: tr("Automatique", "Automatic") });
 const FLASH_SIZE = 0x400000;
 const ESPRESSIF_VID = 0x303a;
 
@@ -354,7 +382,7 @@ class SerialLink {
           }
         }
       } catch (e) {
-        if (this.reading) log("Lecture interrompue : " + e.message, "var(--warn)");
+        if (this.reading) log(tr("Lecture interrompue : ", "Reading interrupted: ") + e.message, "var(--warn)");
       } finally {
         this.reader.releaseLock();
       }
@@ -377,7 +405,6 @@ class SerialLink {
     const lines = [];
     const l = (line) => lines.push(line);
     this.listeners.add(l);
-    log("> " + cmd, "var(--accent)");
     await this.write(cmd + "\r\n");
     await sleep(waitMs);
     this.listeners.delete(l);
@@ -416,22 +443,22 @@ function renderStatus() {
   $("st-version").textContent = state.version || "—";
   $("st-mode").textContent = state.mode != null ? (MODES[state.mode] || `Mode ${state.mode}`) : "—";
   $("st-linky").textContent = state.linkyMode != null
-    ? LINKY_MODES[state.linkyMode] + (state.linkyCurrent ? ` (détecté : ${state.linkyCurrent})` : "")
+    ? LINKY_MODES()[state.linkyMode] + (state.linkyCurrent ? tr(` (détecté : ${state.linkyCurrent})`, ` (detected: ${state.linkyCurrent})`) : "")
     : (state.linkyCurrent || "—");
-  const waiting = state.version ? "en attente de la prochaine lecture…" : "—";
+  const waiting = state.version ? tr("en attente de la prochaine lecture…", "waiting for the next reading…") : "—";
   $("st-contract").textContent = state.contract || waiting;
   if (!state.lastReading) $("st-reading").textContent = waiting;
   if (!state.lastSend) $("st-send").textContent = waiting;
   if (state.lastReading) {
     const e = state.checksumErrors;
     const cls = e <= 10 ? "ok" : e <= 100 ? "warn" : "err";
-    $("st-reading").innerHTML = `${state.lastReading.toLocaleTimeString()} — ${state.fields ?? "?"} champs, `
-      + pill(`${e} erreur${e > 1 ? "s" : ""}`, cls);
+    $("st-reading").innerHTML = `${state.lastReading.toLocaleTimeString()} — ${state.fields ?? "?"} ${tr("champs", "fields")}, `
+      + pill(tr(`${e} erreur${e > 1 ? "s" : ""}`, `${e} error${e > 1 ? "s" : ""}`), cls);
   }
-  if (state.lastSend) $("st-send").innerHTML = state.lastSend === "ok" ? pill("réussi", "ok") : pill("échec", "err");
-  if (state.softRx != null) $("st-softrx").textContent = state.softRx ? "actif" : "inactif (mode historique)";
+  if (state.lastSend) $("st-send").innerHTML = state.lastSend === "ok" ? pill(tr("réussi", "OK"), "ok") : pill(tr("échec", "failed"), "err");
+  if (state.softRx != null) $("st-softrx").textContent = state.softRx ? tr("actif", "active") : tr("inactif (mode historique)", "inactive (historical mode)");
   if (state.skew != null) {
-    $("st-skew").textContent = `${state.skew} µs` + (state.skewForced ? " (imposé)" : " (automatique)")
+    $("st-skew").textContent = `${state.skew} µs` + (state.skewForced ? tr(" (imposé)", " (forced)") : tr(" (automatique)", " (automatic)"))
       + (state.calScore ? ` — calibration ${(state.calScore / 10).toFixed(1)} %` : "");
   }
   renderUpdate();
@@ -453,7 +480,7 @@ function fillSettings() {
   if (state.tuyaUuid != null) {
     const hasTuya = state.tuyaUuid && state.tuyaAuth;
     tuyaOpt.disabled = !hasTuya;
-    tuyaOpt.textContent = hasTuya ? "Tuya" : "Tuya (indisponible : ce TICMeter n'a pas de clés Tuya)";
+    tuyaOpt.textContent = hasTuya ? "Tuya" : tr("Tuya (indisponible : ce TICMeter n'a pas de clés Tuya)", "Tuya (unavailable: this TICMeter has no Tuya keys)");
   }
   const hasStd = state.softRx != null;
   $("std-settings").classList.toggle("hidden", !hasStd);
@@ -466,7 +493,7 @@ async function loadManifest() {
     const r = await fetch("firmware/manifest.json", { cache: "no-cache" });
     manifest = await r.json();
   } catch (e) {
-    $("upd-summary").textContent = "Impossible de lire la dernière version disponible : " + e.message;
+    $("upd-summary").textContent = tr("Impossible de lire la dernière version disponible : ", "Cannot read the latest available version: ") + e.message;
   }
   renderUpdate();
 }
@@ -475,16 +502,17 @@ function renderUpdate() {
   if (!manifest) return;
   const cur = state.version;
   const cmp = cur ? compareVersions(cur, manifest.version) : NaN;
-  let txt = `Dernière version du firmware TICMeter by Bastien1307 : <strong>${manifest.version}</strong> (${manifest.date}) — `
-    + `<a href="${manifest.notes}" target="_blank" rel="noopener">nouveautés</a>. `;
-  if (!cur) txt += "Version installée inconnue (la console ne répond pas).";
-  else if (cmp < 0) txt += `Installée : ${cur}. ${pill("mise à jour disponible", "warn")}`;
-  else if (cmp === 0) txt += `Installée : ${cur}. ${pill("à jour", "ok")}`;
-  else txt += `Installée : ${cur} (plus récente).`;
+  let txt = tr("Dernière version du firmware TICMeter by Bastien1307 : ", "Latest TICMeter by Bastien1307 firmware: ")
+    + `<strong>${manifest.version}</strong> (${manifest.date}) — `
+    + `<a href="${manifest.notes}" target="_blank" rel="noopener">${tr("nouveautés", "release notes")}</a>. `;
+  if (!cur) txt += tr("Version installée inconnue (la console ne répond pas).", "Installed version unknown (the console does not answer).");
+  else if (cmp < 0) txt += `${tr("Installée : ", "Installed: ")}${cur}. ${pill(tr("mise à jour disponible", "update available"), "warn")}`;
+  else if (cmp === 0) txt += `${tr("Installée : ", "Installed: ")}${cur}. ${pill(tr("à jour", "up to date"), "ok")}`;
+  else txt += `${tr("Installée : ", "Installed: ")}${cur} ${tr("(plus récente)", "(newer)")}.`;
   $("upd-summary").innerHTML = txt;
   $("upd-summary").classList.remove("muted");
   $("btn-update").disabled = busy || !port;
-  $("btn-update").textContent = cmp === 0 ? "Réinstaller" : "Mettre à jour";
+  $("btn-update").textContent = cmp === 0 ? tr("Réinstaller", "Reinstall") : tr("Mettre à jour", "Update");
 }
 
 // ---------------------------------------------------------------- progression recopiée dans la section 2
@@ -509,8 +537,8 @@ function startWaitBar() {
     const left = Math.ceil((total - el) / 1000);
     $("wait-bar").value = Math.min(100, (el / total) * 100);
     $("wait-text").textContent = left > 0
-      ? `Prochaine lecture du Linky dans ${left} s au plus…`
-      : "Presque… la lecture est en cours.";
+      ? tr(`Prochaine lecture du Linky dans ${left} s au plus…`, `Next Linky reading in ${left} s at most…`)
+      : tr("Presque… la lecture est en cours.", "Almost there… reading in progress.");
   };
   tick();
   waitTimer = setInterval(tick, 500);
@@ -543,7 +571,7 @@ async function connect() {
   $("btn-connect").classList.add("hidden");
   $("btn-disconnect").classList.remove("hidden");
   for (const id of ["status-card", "update-card", "settings-card", "log-card"]) $(id).classList.remove("hidden");
-  $("conn-status").textContent = "Connecté";
+  $("conn-status").textContent = tr("Connecté", "Connected");
   updateTopbar();
   await queryAll();
 }
@@ -572,22 +600,22 @@ async function reconnect(timeoutMs = 45000) {
         if (!alive) {
           // muet mais présent : le TICMeter est resté en mode programmation (après esptool-js).
           // On le relance normalement : DTR relâché, impulsion sur RTS.
-          log("Port muet : le TICMeter est resté en mode programmation, relance…", "var(--muted)");
+          log(tr("Port muet : le TICMeter est resté en mode programmation, relance…", "Silent port: the TICMeter stayed in programming mode, restarting it…"), "var(--muted)");
           try { await link.reboot(); } catch {}
           alive = await link.waitFor(/./, 8000);
         }
         if (alive) {
-          log("Console rouverte.", "var(--ok)");
+          log(tr("Console rouverte.", "Console reopened."), "var(--ok)");
           return true;
         }
-        log("Toujours muet, nouvel essai…", "var(--muted)");
+        log(tr("Toujours muet, nouvel essai…", "Still silent, trying again…"), "var(--muted)");
         await link.close();
         link = null;
       } catch { /* pas encore revenu */ }
     }
     await sleep(700);
   }
-  log("Le TICMeter n'est pas réapparu sur l'USB.", "var(--err)");
+  log(tr("Le TICMeter n'est pas réapparu sur l'USB.", "The TICMeter did not come back on USB."), "var(--err)");
   return false;
 }
 
@@ -598,7 +626,7 @@ async function disconnect() {
   $("btn-connect").classList.remove("hidden");
   $("btn-disconnect").classList.add("hidden");
   for (const id of ["status-card", "update-card", "settings-card", "log-card", "console-missing"]) $(id).classList.add("hidden");
-  $("conn-status").textContent = "Non connecté";
+  $("conn-status").textContent = tr("Non connecté", "Not connected");
   updateTopbar();
 }
 
@@ -614,8 +642,8 @@ async function waitAfterReboot() {
   const tick = () => {
     const el = Date.now() - t0;
     $("wait-bar").value = Math.min(100, (el / shown) * 100);
-    $("wait-text").textContent = el < shown ? "Redémarrage du TICMeter… (environ 1 minute)"
-      : "Presque… le TICMeter termine son démarrage.";
+    $("wait-text").textContent = el < shown ? tr("Redémarrage du TICMeter… (environ 1 minute)", "Restarting the TICMeter… (about 1 minute)")
+      : tr("Presque… le TICMeter termine son démarrage.", "Almost there… the TICMeter is finishing its startup.");
   };
   tick();
   waitTimer = setInterval(tick, 500);
@@ -625,7 +653,7 @@ async function waitAfterReboot() {
   while (back && !ready && Date.now() < deadline) {
     ready = await link.waitFor(/Type 'help'/, 5000);
     if (!ready && !port.readable) {            // la console rouverte est morte : on recommence
-      log("Console perdue pendant le démarrage, reconnexion…", "var(--muted)");
+      log(tr("Console perdue pendant le démarrage, reconnexion…", "Console lost during startup, reconnecting…"), "var(--muted)");
       back = await reconnect();
     }
   }
@@ -642,12 +670,12 @@ async function waitAfterReboot() {
 }
 
 async function rebootAndWait(msgEl) {
-  if (msgEl) msgEl.innerHTML = `<p class="notice">Redémarrage du TICMeter… (environ 1 minute)</p>`;
+  if (msgEl) msgEl.innerHTML = `<p class="notice">${tr("Redémarrage du TICMeter… (environ 1 minute)", "Restarting the TICMeter… (about 1 minute)")}</p>`;
   rebooting = true;
   await link.reboot();
   const ok = await waitAfterReboot();
-  if (msgEl) msgEl.innerHTML = ok ? `<p class="notice ok">TICMeter redémarré.</p>`
-    : `<p class="notice">Le TICMeter a redémarré mais la console ne répond pas.</p>`;
+  if (msgEl) msgEl.innerHTML = ok ? `<p class="notice ok">${tr("TICMeter redémarré.", "TICMeter restarted.")}</p>`
+    : `<p class="notice">${tr("Le TICMeter a redémarré mais la console ne répond pas.", "The TICMeter restarted but the console does not answer.")}</p>`;
 }
 
 // ---------------------------------------------------------------- flash (esptool-js)
@@ -670,21 +698,21 @@ async function withLoader(action) {
   try {
     await link.close();
     link = null;
-    setProgress("Passage en mode programmation…", 0);
+    setProgress(tr("Passage en mode programmation…", "Entering programming mode…"), 0);
     transport = new Transport(port, false);
     const loader = new ESPLoader({
       transport, baudrate: 115200,
       terminal: { clean() {}, writeLine: (d) => log(d, "var(--muted)"), write: (d) => log(d, "var(--muted)") },
     });
     const chip = await loader.main();
-    if (!/ESP32-C6/i.test(chip)) throw new Error(`Puce inattendue : ${chip} (un TICMeter est un ESP32-C6)`);
+    if (!/ESP32-C6/i.test(chip)) throw new Error(tr(`Puce inattendue : ${chip} (un TICMeter est un ESP32-C6)`, `Unexpected chip: ${chip} (a TICMeter is an ESP32-C6)`));
     await action(loader);
     setProgress("Redémarrage…", 100);
     await loader.after("hard_reset");
     return true;
   } catch (e) {
-    $("flash-result").innerHTML = `<p class="notice err">Échec : ${e.message || e}</p>`;
-    log("Erreur : " + (e.message || e), "var(--err)");
+    $("flash-result").innerHTML = `<p class="notice err">${tr("Échec", "Failed")} : ${e.message || e}</p>`;
+    log(tr("Erreur : ", "Error: ") + (e.message || e), "var(--err)");
     return false;
   } finally {
     try { await transport?.disconnect(); } catch {}
@@ -707,9 +735,9 @@ async function recoverAfterFailure() {
 async function backup() {
   let data;
   const ok = await withLoader(async (loader) => {
-    setProgress("Lecture de la flash…", 0);
+    setProgress(tr("Lecture de la flash…", "Reading the flash…"), 0);
     data = await loader.readFlash(0, FLASH_SIZE, (_p, done, total) => setProgress(
-      `Lecture de la flash… ${Math.round(done / 1024)} / ${Math.round(total / 1024)} Ko`, (done / total) * 100));
+      tr(`Lecture de la flash… ${Math.round(done / 1024)} / ${Math.round(total / 1024)} Ko`, `Reading the flash… ${Math.round(done / 1024)} / ${Math.round(total / 1024)} KB`), (done / total) * 100));
   });
   if (!ok || !data) { await recoverAfterFailure(); return; }
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
@@ -718,7 +746,7 @@ async function backup() {
   a.download = `ticmeter-sauvegarde-${stamp}.bin`;
   a.click();
   backupDone = true;
-  $("flash-result").innerHTML = `<p class="notice ok">Sauvegarde téléchargée (${a.download}). Gardez ce fichier : il permet de revenir à l'état actuel.</p>`;
+  $("flash-result").innerHTML = `<p class="notice ok">${tr(`Sauvegarde téléchargée (${a.download}). Gardez ce fichier : il permet de revenir à l'état actuel.`, `Backup downloaded (${a.download}). Keep this file: it lets you go back to the current state.`)}</p>`;
   $("flash-progress").classList.add("hidden");
   stopWaitBar();
   await waitAfterReboot();
@@ -730,29 +758,32 @@ async function writeFiles(files, label) {
       fileArray: files, flashMode: "keep", flashFreq: "keep", flashSize: "keep",
       eraseAll: false, compress: true,
       reportProgress: (i, written, total) => setProgress(
-        `${label} : fichier ${i + 1}/${files.length}…`, ((i + written / total) / files.length) * 100),
+        `${label} : ${tr("fichier", "file")} ${i + 1}/${files.length}…`, ((i + written / total) / files.length) * 100),
       calculateMD5Hash: (image) => md5(image),
     });
   });
   $("flash-progress").classList.add("hidden");
   stopWaitBar();
   if (!ok) { await recoverAfterFailure(); return; }
-  $("flash-result").innerHTML = `<p class="notice ok">${label} terminée et vérifiée. Le TICMeter redémarre (environ 1 minute).</p>`;
+  $("flash-result").innerHTML = `<p class="notice ok">${label} ${tr("terminée et vérifiée. Le TICMeter redémarre (environ 1 minute).", "done and verified. The TICMeter is restarting (about 1 minute).")}</p>`;
   await waitAfterReboot();
 }
 
 async function update() {
-  if (!backupDone && !confirm("Vous n'avez pas sauvegardé la flash pendant cette session.\n\n"
+  if (!backupDone && !confirm(tr("Vous n'avez pas sauvegardé la flash pendant cette session.\n\n"
     + "La mise à jour garde la configuration, mais une sauvegarde permet de revenir exactement en arrière.\n\n"
-    + "Continuer sans sauvegarde ?")) return;
-  setProgress("Téléchargement du firmware…", 0);
+    + "Continuer sans sauvegarde ?",
+    "You have not backed up the flash during this session.\n\n"
+    + "Updating keeps the settings, but a backup lets you go back exactly.\n\n"
+    + "Continue without a backup?"))) return;
+  setProgress(tr("Téléchargement du firmware…", "Downloading the firmware…"), 0);
   const files = [];
   for (const p of manifest.parts) {
     const r = await fetch("firmware/" + p.path, { cache: "no-cache" });
-    if (!r.ok) { $("flash-result").innerHTML = `<p class="notice err">Téléchargement impossible : ${p.path}</p>`; return; }
+    if (!r.ok) { $("flash-result").innerHTML = `<p class="notice err">${tr("Téléchargement impossible", "Download failed")} : ${p.path}</p>`; return; }
     files.push({ data: new Uint8Array(await r.arrayBuffer()), address: p.offset });
   }
-  await writeFiles(files, `Mise à jour vers ${manifest.version}`);
+  await writeFiles(files, tr(`Mise à jour vers ${manifest.version}`, `Update to ${manifest.version}`));
 }
 
 async function restore() {
@@ -760,11 +791,11 @@ async function restore() {
   if (!f) return;
   const data = new Uint8Array(await f.arrayBuffer());
   if (data.length !== FLASH_SIZE) {
-    $("flash-result").innerHTML = `<p class="notice err">Ce fichier fait ${data.length} octets : une sauvegarde complète en fait ${FLASH_SIZE}.</p>`;
+    $("flash-result").innerHTML = `<p class="notice err">${tr(`Ce fichier fait ${data.length} octets : une sauvegarde complète en fait ${FLASH_SIZE}.`, `This file is ${data.length} bytes: a full backup is ${FLASH_SIZE}.`)}</p>`;
     return;
   }
-  if (!confirm("Réécrire toute la flash avec ce fichier ?\n\nÀ n'utiliser qu'avec une sauvegarde faite sur ce TICMeter.")) return;
-  await writeFiles([{ data, address: 0 }], "Restauration");
+  if (!confirm(tr("Réécrire toute la flash avec ce fichier ?\n\nÀ n'utiliser qu'avec une sauvegarde faite sur ce TICMeter.", "Rewrite the whole flash with this file?\n\nOnly use a backup made on this TICMeter."))) return;
+  await writeFiles([{ data, address: 0 }], tr("Restauration", "Restore"));
 }
 
 // ---------------------------------------------------------------- paramètres
@@ -788,15 +819,15 @@ const SAVERS = {
 async function save(kind) {
   if (!link) return;
   if (!consoleOk) {
-    $("settings-result").innerHTML = `<p class="notice err">La console ne répond pas : redémarrez le TICMeter (section 1).</p>`;
+    $("settings-result").innerHTML = `<p class="notice err">${tr("La console ne répond pas : redémarrez le TICMeter (section 1).", "The console does not answer: restart the TICMeter (section 1).")}</p>`;
     return;
   }
   const out = [];
   for (const c of SAVERS[kind]()) out.push(...(await link.command(c, 900)));
   const failed = out.some((l) => /Unrecognized command|Invalid argument|Command returned non-zero/i.test(l));
   $("settings-result").innerHTML = failed
-    ? `<p class="notice err">Le TICMeter a refusé ce réglage. Détail dans la console ci-dessous.</p>`
-    : `<p class="notice ok">Enregistré. Redémarrez le TICMeter pour l'appliquer.</p>`;
+    ? `<p class="notice err">${tr("Le TICMeter a refusé ce réglage. Détail dans la console ci-dessous.", "The TICMeter refused this setting. Details in the console below.")}</p>`
+    : `<p class="notice ok">${tr("Enregistré. Redémarrez le TICMeter pour l'appliquer.", "Saved. Restart the TICMeter to apply it.")}</p>`;
   if (!failed) { rebootNeeded = true; updateTopbar(); }
   if (kind === "wifi") $("set-wifipw").value = "";
   if (kind === "mqtt") $("set-mqtt-pw").value = "";
@@ -824,8 +855,10 @@ function updateTopbar() {
   $("btn-top-disconnect").classList.toggle("hidden", !any);
   $("btn-top-reboot").classList.toggle("hidden", !(any && rebootNeeded));
   $("topbar-status").textContent = port
-    ? "TICMeter connecté" + (state.version ? ` · ${state.version}` : "") + (state.mode != null ? ` · ${MODES[state.mode] || ""}` : "")
-    : "TICMeter non connecté";
+    ? tr("TICMeter connecté", "TICMeter connected") + (state.version ? ` · ${state.version}` : "") + (state.mode != null ? ` · ${MODES[state.mode] || ""}` : "")
+    : tr("TICMeter non connecté", "TICMeter not connected");
+  $("btn-lang").textContent = lang === "en" ? "FR" : "EN";
+  $("btn-lang").title = lang === "en" ? "Passer en français" : "Switch to English";
 }
 $("btn-refresh").onclick = queryAll;
 $("btn-reboot-console").onclick = () => rebootAndWait($("flash-result"));
@@ -844,8 +877,8 @@ $("cmd-form").onsubmit = async (e) => {
 const logText = () => [...logEl.childNodes].map((d) => d.textContent).join("\n");
 function logMsg(t) { $("log-msg").textContent = t; setTimeout(() => ($("log-msg").textContent = ""), 3000); }
 $("btn-log-copy").onclick = async () => {
-  try { await navigator.clipboard.writeText(logText()); logMsg("Copié."); }
-  catch { logMsg("Copie impossible : utilisez « Enregistrer dans un fichier »."); }
+  try { await navigator.clipboard.writeText(logText()); logMsg(tr("Copié.", "Copied.")); }
+  catch { logMsg(tr("Copie impossible : utilisez « Enregistrer dans un fichier ».", "Copy failed: use \"Save to a file\".")); }
 };
 $("btn-log-save").onclick = () => {
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
@@ -853,18 +886,29 @@ $("btn-log-save").onclick = () => {
   a.href = URL.createObjectURL(new Blob([logText() + "\n"], { type: "text/plain" }));
   a.download = `ticmeter-journal-${stamp}.txt`;
   a.click();
-  logMsg("Fichier enregistré.");
+  logMsg(tr("Fichier enregistré.", "File saved."));
 };
 $("btn-log-clear").onclick = () => { logEl.textContent = ""; };
 
-navigator.serial?.addEventListener("connect", (e) => log("USB : un appareil est (ré)apparu.", "var(--muted)"));
+navigator.serial?.addEventListener("connect", (e) => log(tr("USB : un appareil est (ré)apparu.", "USB: a device (re)appeared."), "var(--muted)"));
 navigator.serial?.addEventListener("disconnect", async (e) => {
   if (e.target !== port) return;
-  log("USB : le TICMeter a disparu.", "var(--muted)");
+  log(tr("USB : le TICMeter a disparu.", "USB: the TICMeter disappeared."), "var(--muted)");
   if (busy || rebooting) return;
-  log("Le TICMeter s'est déconnecté, tentative de reconnexion…", "var(--warn)");
+  log(tr("Le TICMeter s'est déconnecté, tentative de reconnexion…", "The TICMeter disconnected, trying to reconnect…"), "var(--warn)");
   if (!(await reconnect(10000))) disconnect();
 });
+function setLang(l) {
+  lang = l;
+  try { localStorage.setItem("ticmeter-lang", l); } catch {}
+  applyLang(l);
+  updateTopbar();
+  renderUpdate();
+  if (port) { renderStatus(); fillSettings(); $("conn-status").textContent = tr("Connecté", "Connected"); }
+  else $("conn-status").textContent = tr("Non connecté", "Not connected");
+}
+$("btn-lang").onclick = () => setLang(lang === "en" ? "fr" : "en");
+setLang(lang);
 loadManifest();
 </script>
 </body>

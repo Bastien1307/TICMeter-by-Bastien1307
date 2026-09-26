@@ -22,8 +22,9 @@ sur « Connecter le TICMeter » :
   mode TIC, intervalle d'envoi, Wi-Fi, MQTT, libellés et récepteur du mode standard ;
 - **Console** : journal du TICMeter, copiable ou enregistrable.
 
-*Plug the TICMeter over USB, open the page in Chrome, Edge or Opera (desktop) and click
-"Connecter": status, flash backup / restore, update (settings and Zigbee pairing kept),
+*English version: **https://bastien1307.github.io/TICMeter-by-Bastien1307/?lang=en** —
+plug the TICMeter over USB, open the page in Chrome, Edge or Opera (desktop) and click
+"Connect": status, flash backup / restore, update (settings and Zigbee pairing kept),
 configuration and console, all from the browser.*
 
 ---
@@ -115,9 +116,6 @@ esptool.py --chip esp32c6 -p <PORT> -b 460800 write_flash \
 `<PORT>` : par exemple `/dev/cu.usbmodem2101` (macOS), `/dev/ttyACM0` (Linux), `COM3` (Windows).
 Ne pas laisser la page de mise à jour GammaTroniques ouverte : elle monopolise le port.
 
-**Mise à jour par Zigbee** : le fichier `TICMeter.ota` de la release est prévu pour une
-mise à jour sans fil depuis le coordinateur. **Non testé à ce jour.**
-
 **Revenir au firmware officiel** : depuis la page de mise à jour GammaTroniques, ou en
 réécrivant la sauvegarde (`write_flash 0 sauvegarde_ticmeter.bin`).
 
@@ -182,7 +180,6 @@ from the browser. Command line: back up the whole flash first
 (`esptool.py --chip esp32c6 -p <PORT> read_flash 0 0x400000 backup.bin`), then flash the
 [release](../../releases) files at `0x10000` (`ota_data_initial.bin`), `0x17000`
 (`storage.bin`) and `0x30000` (`TICMeter.bin`). Configuration and Zigbee pairing are kept.
-Zigbee OTA file provided but **not tested yet**.
 
 **Support**: this firmware is free and complete. If it helps you, you may buy me a coffee,
 **only if you wish**: **[☕ paypal.me/sebastienRanc](https://paypal.me/sebastienRanc)**

@@ -5,6 +5,13 @@ Modifications apportées au firmware de [GammaTroniques](https://github.com/Gamm
 
 *Changes made to the GammaTroniques firmware, based on its `main` branch (commit `bd2da3f`).*
 
+## Page web — mises à jour du 2026-09-26
+
+- Barre du haut permanente : état, Connecter / Déconnecter, Redémarrer (seulement si un réglage l'exige), progression (aussi recopiée en section 2).
+- Barre du bas : soutien (facultatif) et bascule **français / anglais** (`?lang=en` pour ouvrir en anglais).
+- Journal : une seule ligne par commande. Fichier OTA Zigbee retiré des releases (jamais testé).
+  *Top and bottom bars, French / English switch, cleaner log.*
+
 ## V3.3.1-std — 2026-09-26
 
 ### Corrigé / Fixed
