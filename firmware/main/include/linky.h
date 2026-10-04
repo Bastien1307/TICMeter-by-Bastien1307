@@ -384,6 +384,7 @@ void linky_stop();
  * @return char: 1 if success, 0 if error
  */
 char linky_update(uint32_t timeout);
+char linky_update_bascule(uint32_t timeout, bool guetter); // lecture arrêtée dès le changement de tarif
 
 /**
  * @brief Print all data read from the linky

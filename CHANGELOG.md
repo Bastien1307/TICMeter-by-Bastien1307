@@ -5,6 +5,31 @@ Modifications apportées au firmware de [GammaTroniques](https://github.com/Gamm
 
 *Changes made to the GammaTroniques firmware, based on its `main` branch (commit `bd2da3f`).*
 
+## V3.4.7-std — 2026-10-04
+
+### Ajouté / Added
+
+- **Bascule HP/HC détectée tout de suite** : le firmware décode le profil du lendemain envoyé
+  par le Linky (`PJOURF+1`, auparavant tronqué à 16 caractères) et se réveille 30 s avant chaque
+  changement de tarif. Il lit en continu jusqu'au changement, puis envoie aussitôt le nouveau
+  tarif (`LTARF`) et l'heure du compteur, sans attendre l'envoi complet. Dans Domoticz, la
+  bascule apparaît en quelques secondes au lieu d'environ 1 min 15.
+  Commande console `bascule-info` : prochaines bascules et prochain réveil.
+  *Tariff changes (peak / off-peak) are now reported within seconds: the firmware decodes the
+  next-day profile, wakes up 30 s before each change and sends the new tariff immediately.*
+
+### Corrigé / Fixed
+
+- **Libellé du tarif parfois abîmé** (« HEURE CREUSE » reçu « HEU?E CREUSE », vu « Unknown
+  Tarif » par Zigbee for Domoticz, environ une fois par jour) : une lettre arrivait avec son
+  bit 0x40 à zéro. La somme de contrôle TIC ne porte que sur 6 bits et ne voit pas cette erreur.
+  Les lignes contenant un caractère de contrôle sont désormais rejetées.
+  *Tariff label occasionally corrupted (one bit lost on the TIC line, invisible to the 6-bit
+  checksum): lines containing control characters are now discarded.*
+- Envoi Zigbee des textes : la chaîne au format Zigbee est construite dans une copie, le tampon
+  lu par le décodage TIC n'est plus modifié pendant l'envoi.
+  *Zigbee string attributes are built in a local copy instead of the shared buffer.*
+
 ## Page web — mises à jour du 2026-09-26
 
 - Barre du haut permanente : état, Connecter / Déconnecter, Redémarrer (seulement si un réglage l'exige), progression (aussi recopiée en section 2).

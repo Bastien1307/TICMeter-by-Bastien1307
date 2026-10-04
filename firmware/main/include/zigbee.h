@@ -48,6 +48,7 @@
 ==============================================================================*/
 extern void zigbee_init_stack();
 extern esp_err_t zigbee_send(linky_data_t *data);
+esp_err_t zigbee_send_tarif(void); // bascule HP/HC : tarif + heure Linky, tout de suite
 void zigbee_start_pairing();
 uint8_t zigbee_factory_reset();
 #endif // ZIGBEE_H

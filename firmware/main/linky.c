@@ -17,6 +17,8 @@
 #include "esp_log.h"
 #include <linky.h>
 #include "soft_rx.h"
+#include "bascule.h"
+#include "zigbee.h"
 #include <config.h>
 #include <time.h>
 #include <gpio.h>
@@ -93,6 +95,7 @@ typedef struct
 ===============================================================================*/
 static char linky_decode();                                      // Decode the frame
 static char linky_checksum(char *label, char *data, char *time); // Check the checksum
+static bool linky_has_control_char(const char *str);            // Caractère < 0x20 dans la chaîne
 static void linky_create_debug_frame(linky_debug_t debug);
 static time_t linky_decode_time(char *time); // Decode the time
 esp_err_t linky_handle_auto_check();
@@ -834,6 +837,16 @@ static char linky_decode()
         }
         // ESP_LOGI(TAG, "label: %s value: %s checksum: %s", label, value, checksum);
 
+        // La somme de contrôle TIC ne garde que 6 bits (& 0x3F) : un bit 0x40 perdu en ligne passe
+        // inaperçu (« HEURE CREUSE » reçu « HEU\x12E CREUSE », 3 fois du 01 au 02/10/2026). Une lettre
+        // qui perd ce bit devient un caractère de contrôle, interdit dans une ligne TIC : on rejette.
+        if (linky_has_control_char(label) || linky_has_control_char(value) || linky_has_control_char(time))
+        {
+            linky_decode_checksum_error++;
+            ESP_LOGV(TAG, "%s = %s: control character, skipped", label, value);
+            continue;
+        }
+
         if (linky_checksum(label, value, time) != checksum[0]) // check the checksum with the label, data and time
         {
             // error: checksum is not correct, skip the field
@@ -857,6 +870,10 @@ static char linky_decode()
                     {
                     case STRING:
                     {
+                        if (linky_mode == MODE_STD && strcmp(label, "PJOURF+1") == 0)
+                        {
+                            bascule_set_profil(value); // profil complet, avant la troncature à 16 caractères
+                        }
                         if (linky_mode == MODE_STD && !config_values.std_raw_labels)
                         {
                             // le Linky centre ses libellés sur 16 caractères ("  HEURE  PLEINE  ") :
@@ -1238,6 +1255,17 @@ esp_err_t linky_compute()
  */
 char linky_update(uint32_t timeout)
 {
+    return linky_update_bascule(timeout, false);
+}
+
+/**
+ * @brief Lit le Linky pendant « timeout » ms. Si « guetter » est vrai (mode standard), s'arrête dès que
+ * l'index tarifaire en cours (NTARF) change, une trame plus tard (le temps d'avoir la trame complète) :
+ * la bascule part ainsi vers Domoticz quelques secondes après celle du Linky.
+ * Ajout de Bastien1307 (2026).
+ */
+char linky_update_bascule(uint32_t timeout, bool guetter)
+{
     uint8_t ret;
 
     esp_pm_lock_acquire(linky_pm_lock);
@@ -1256,10 +1284,41 @@ char linky_update(uint32_t timeout)
     uint32_t try = 0;
     ESP_LOGI(TAG, "Reading frame...");
     timeout += MILLIS;
+    guetter = guetter && linky_mode == MODE_STD;
+    uint16_t ntarf_avant = linky_data.std.NTARF; // tarif de la lecture précédente (UINT16_MAX si inconnu)
+    uint32_t fin_guet = 0;                       // 0 : bascule pas encore vue
+    uint32_t prochain_log = 0;
     do
     {
-        ESP_LOGI(TAG, "Reading frame: remaining: %ld ms, VCONDO: %f, feilds: %ld", timeout - MILLIS, gpio_get_vcondo(), linky_last_decode_count);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        if (MILLIS >= prochain_log)
+        {
+            ESP_LOGI(TAG, "Reading frame: remaining: %ld ms, VCONDO: %f, feilds: %ld", timeout - MILLIS, gpio_get_vcondo(), linky_last_decode_count);
+            prochain_log = MILLIS + 1000;
+        }
+        if (guetter)
+        {
+            // les trames sont décodées au fil de l'eau (tous les LINKY_DECODE_LEN octets) : NTARF est à jour
+            uint16_t ntarf = linky_data.std.NTARF;
+            if (ntarf_avant == UINT16_MAX || ntarf_avant == 0)
+            {
+                ntarf_avant = ntarf; // pas de lecture précédente : référence = première trame lue
+            }
+            else if (!fin_guet && ntarf != UINT16_MAX && ntarf != 0 && ntarf != ntarf_avant)
+            {
+                ESP_LOGI(TAG, "Tariff index changed: %u -> %u", ntarf_avant, ntarf);
+                bascule_noter(linky_data.std.DATE.time);
+                if (config_values.mode == MODE_ZIGBEE)
+                {
+                    zigbee_send_tarif(); // tarif tout de suite, les index suivent avec l'envoi complet
+                }
+                fin_guet = MILLIS + 2000; // une trame de plus, pour envoyer des index cohérents avec le tarif
+            }
+            if (fin_guet && MILLIS >= fin_guet)
+            {
+                break;
+            }
+        }
+        vTaskDelay((guetter ? 200 : 1000) / portTICK_PERIOD_MS);
     } while (MILLIS < timeout);
 
     // if (linky_same_feilds_count >= LINKY_SAME_FEILDS_COUNT)
@@ -1278,6 +1337,10 @@ char linky_update(uint32_t timeout)
     }
     linky_reading = 0;
     soft_rx_pause();
+    if (linky_mode == MODE_STD)
+    {
+        bascule_maj(linky_data.std.DATE.time); // heure du Linky pour le réveil à la prochaine bascule
+    }
 
     linky_frame_size = 0; // clear the frame size
 
@@ -1396,6 +1459,22 @@ void linky_print()
     ESP_LOGI(TAG, "Three phases: %s", linky_three_phase ? "Yes" : "No");
 
     ESP_LOGI(TAG, "-------------------");
+}
+
+/**
+ * @brief Vrai si la chaîne contient un caractère de contrôle (< 0x20) : illégal dans une ligne TIC,
+ *        signe d'un bit 0x40 perdu que la somme de contrôle (6 bits) ne voit pas
+ */
+static bool linky_has_control_char(const char *str)
+{
+    for (; *str; str++)
+    {
+        if ((uint8_t)*str < 0x20)
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**

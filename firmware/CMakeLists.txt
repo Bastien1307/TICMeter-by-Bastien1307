@@ -11,7 +11,7 @@ execute_process(COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/scripts/compress.py 
 
 set(EXTRA_COMPONENT_DIRS $ENV{IDF_PATH}/examples/bluetooth/nimble/common/nimble_peripheral_utils)
 # Version non officielle (correctif mode standard) : au-dessus de toute version GammaTroniques
-set(PROJECT_VER "V3.3.1-std")
+set(PROJECT_VER "V3.4.7-std")
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(TICMeter)
 

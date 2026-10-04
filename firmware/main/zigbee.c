@@ -784,6 +784,40 @@ static esp_err_t zigbee_report_attribute(uint8_t endpoint, uint16_t clusterID, u
 
     return ret;
 }
+// Bascule HP/HC : envoi immédiat du libellé tarif (LTARF, lu par Z4D pour le tarif en cours)
+// et de l'heure du Linky, sans attendre la trame suivante ni l'envoi complet.
+esp_err_t zigbee_send_tarif(void)
+{
+    if (config_values.zigbee.state != ZIGBEE_PAIRED || zigbee_state == ZIGBEE_COMMISIONING_ERROR)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    // chaîne ZCL (longueur en tête) dans un tampon local : linky_data continue d'être décodé
+    uint8_t ltarf[sizeof(linky_data.std.LTARF) + 1];
+    size_t len = strnlen(linky_data.std.LTARF, 16);
+    if (len == 0)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    ltarf[0] = (uint8_t)len;
+    memcpy(ltarf + 1, linky_data.std.LTARF, len);
+    uint64_t date = linky_data.std.DATE.time;
+
+    ESP_LOGI(TAG, "Tariff change: immediate report LTARF=%.*s", (int)len, linky_data.std.LTARF);
+    esp_zb_lock_acquire(portMAX_DELAY);
+    esp_err_t ret = zigbee_report_attribute(LINKY_TIC_ENDPOINT, 0xFF42, 0x0039, ltarf, len + 1);
+    if (ret == ESP_OK && date)
+    {
+        ret = zigbee_report_attribute(LINKY_TIC_ENDPOINT, 0xFF42, 0x000B, &date, sizeof(date));
+    }
+    esp_zb_lock_release();
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Tariff change: immediate report failed: 0x%x", ret);
+    }
+    return ret;
+}
+
 char string_buffer[100];
 
 uint64_t temp = 150;
@@ -815,6 +849,7 @@ esp_err_t zigbee_send(linky_data_t *data)
     for (int i = 0; i < linky_label_list_size; i++)
     {
         char str_value[102];
+        uint8_t zb_str[102]; // chaîne au format Zigbee (STRING), voir plus bas
         void *ptr_value = linky_label_list[i].data;
         ESP_LOGD(TAG, "check %s %d", linky_label_list[i].label, i);
         if (linky_label_list[i].mode != linky_mode && linky_label_list[i].mode != ANY)
@@ -878,17 +913,14 @@ esp_err_t zigbee_send(linky_data_t *data)
             {
                 continue;
             }
-            char *str = (char *)linky_label_list[i].data;
-            char temp[100];
-            memcpy(temp + 1, str, linky_label_list[i].size + 1);
-            temp[0] = strlen(temp + 1);
-            if (temp[0] > linky_label_list[i].size)
-            {
-                temp[0] = linky_label_list[i].size;
-            }
-            temp[linky_label_list[i].size + 2] = '\0';
-            memcpy(linky_label_list[i].data, temp, linky_label_list[i].size + 1);
-            // ESP_LOG_BUFFER_HEXDUMP(TAG, linky_label_list[i].data, linky_label_list[i].size + 2, ESP_LOG_INFO);
+            // chaîne Zigbee (longueur + texte) construite dans une copie locale : convertir sur place
+            // le tampon partagé faisait la course avec linky_decode (tâche UART), qui le réécrit au
+            // même moment ; le tarif partait alors amputé d'une lettre (« HEURE CEUSE », 2026-10-02)
+            uint8_t size = linky_label_list[i].size;
+            memcpy(zb_str + 1, linky_label_list[i].data, size);
+            zb_str[size + 1] = '\0';
+            zb_str[0] = strlen((char *)zb_str + 1);
+            ptr_value = zb_str;
             break;
         }
         case UINT32_TIME:

@@ -37,6 +37,7 @@
 #include "common.h"
 #include "linky.h"
 #include "main.h"
+#include "bascule.h"
 #include "config.h"
 #include "wifi.h"
 #include "shell.h"
@@ -284,6 +285,19 @@ void main_task(void *pvParameters)
   while (1)
   {
     main_sleep_time = abs((int32_t)config_values.refresh_rate - (int32_t)fetching_time[config_values.mode] - ((LINKY_READING_TIMEOUT / 1000) - 2));
+    // Changement de tarif annoncé par le Linky avant la prochaine lecture : réveil un peu avant,
+    // puis lecture continue jusqu'à ce que le Linky bascule (il n'est pas pile à l'heure).
+    uint32_t guet_ms = 0;
+    int32_t avant_bascule = bascule_secondes_avant();
+    if (avant_bascule >= 0 && avant_bascule - BASCULE_AVANCE_S < (int32_t)main_sleep_time)
+    {
+      int32_t reveil = avant_bascule - BASCULE_AVANCE_S;
+      if (reveil < 0)
+        reveil = 0;
+      main_sleep_time = reveil;
+      guet_ms = (uint32_t)(avant_bascule - reveil + BASCULE_ATTENTE_APRES_S) * 1000;
+      ESP_LOGI(MAIN_TAG, "Tariff change in %" PRId32 " s: watching the Linky from %" PRId32 " s", avant_bascule, reveil);
+    }
     ESP_LOGI(MAIN_TAG, "Waiting for %ld seconds", main_sleep_time);
     esp_pm_lock_release(main_init_lock);
     while (main_sleep_time > 0)
@@ -296,7 +310,7 @@ void main_task(void *pvParameters)
     ESP_LOGI(MAIN_TAG, "-----------------------------------------------------------------");
     ESP_LOGI(MAIN_TAG, "Waking up, VCondo: %f", gpio_get_vcondo());
 
-    if (!linky_update(LINKY_READING_TIMEOUT) /* || !linky_presence()*/)
+    if (!(guet_ms ? linky_update_bascule(guet_ms, true) : linky_update(LINKY_READING_TIMEOUT)) /* || !linky_presence()*/)
     {
       ESP_LOGE(MAIN_TAG, "Linky update failed");
       led_start_pattern(LED_LINKY_FAILED);

@@ -29,6 +29,7 @@
 #include "led.h"
 #include "tuya.h"
 #include "soft_rx.h"
+#include "bascule.h"
 /*==============================================================================
  Local Define
 ===============================================================================*/
@@ -123,6 +124,7 @@ static int skip_command(int argc, char **argv);
 static int soft_rx_stats_command(int argc, char **argv);
 static int set_rx_skew_command(int argc, char **argv);
 static int set_std_labels_command(int argc, char **argv);
+static int bascule_info_command(int argc, char **argv);
 static int stop_main(int argc, char **argv);
 
 static int start_pairing_command(int argc, char **argv);
@@ -206,6 +208,7 @@ static const shell_cmd_t shell_cmds[] = {
     // récepteur logiciel du mode standard (version non officielle)
     {"soft-rx-stats",               "Soft RX: stats and current skew",          &soft_rx_stats_command,             0, {}, {}},
     {"set-rx-skew",                 "Soft RX: force skew in us (0 = auto)",     &set_rx_skew_command,               1, {"<us>"}, {"0 = auto calibration, 1..60 = forced skew"}},
+    {"bascule-info",                "Tariff change schedule (PJOURF+1) and next wake-up", &bascule_info_command, 0, {}, {}},
     {"set-std-labels",              "STD labels: 0 = cleaned, 1 = raw",         &set_std_labels_command,            1, {"<raw>"}, {"0 = trim/collapse spaces (default), 1 = raw Linky text"}},
 
 };
@@ -996,6 +999,12 @@ static int set_std_labels_command(int argc, char **argv)
   config_values.std_raw_labels = atoi(argv[1]) ? 1 : 0;
   config_write();
   printf("STD labels: %s (applied on next reading)\n", config_values.std_raw_labels ? "raw" : "cleaned");
+  return 0;
+}
+
+static int bascule_info_command(int argc, char **argv)
+{
+  bascule_afficher();
   return 0;
 }
 
