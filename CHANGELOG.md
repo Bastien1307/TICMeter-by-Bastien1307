@@ -5,6 +5,40 @@ Modifications apportées au firmware de [GammaTroniques](https://github.com/Gamm
 
 *Changes made to the GammaTroniques firmware, based on its `main` branch (commit `bd2da3f`).*
 
+## V3.4.10-std — 2026-10-11
+
+### Ajouté / Added
+
+- **Valeurs fixes du compteur envoyées en Zigbee** (puissance souscrite `PREF`, puissance de
+  coupure `PCOUP`, numéro de compteur `ADSC`, point de livraison `PRM`, nom du calendrier
+  `NGTF`…) : elles partent une fois au démarrage, puis à chaque changement. Auparavant elles
+  n'étaient connues du coordinateur qu'à l'appairage : après un changement de contrat (9 kVA
+  vers 6 kVA par exemple), l'ancienne valeur restait affichée.
+  *Static meter values (subscribed power, meter serial number, tariff calendar name…) are now
+  reported over Zigbee at startup and whenever they change, instead of only at pairing.*
+- **Relève rapide après chaque envoi** : pendant 10 s après avoir envoyé ses mesures, le TICMeter
+  interroge son routeur en continu. Les demandes de lecture du coordinateur arrivées dans cette
+  fenêtre reçoivent toutes une réponse en moins d'une seconde (environ une sur deux avant, le
+  routeur ne gardant les messages que quelques secondes pour un appareil en veille).
+  *Fast polling for 10 s after each report: read requests sent by the coordinator in that window
+  are all answered within a second (about one in two before). Tested with Zigbee for Domoticz,
+  not with Zigbee2MQTT.*
+
+### Corrigé / Fixed
+
+- **Index qui baisse ou tronqué** : un chiffre pouvait arriver avec le bit 0x40 en trop et
+  devenir une lettre (« 003242060 » reçu « 0032420p0 »), ce que la somme de contrôle TIC ne voit
+  pas. La valeur était alors lue jusqu'à la lettre, donc tronquée. Une valeur numérique qui
+  contient autre chose que des chiffres est désormais rejetée et l'ancienne valeur conservée
+  (modes standard et historique).
+  *Index going down or truncated: a digit could be received as a letter (one extra bit on the TIC
+  line, invisible to the checksum) and the value was cut at that letter. Numeric values containing
+  anything but digits are now discarded (standard and historic modes).*
+- **Nom du calendrier tarifaire (`NGTF`) jamais reçu** par le coordinateur : il est maintenant
+  envoyé par le TICMeter au lieu d'attendre une lecture qui restait sans réponse.
+  *Tariff calendar name (`NGTF`) never received by the coordinator: it is now reported by the
+  device instead of waiting for a read request that was never answered.*
+
 ## V3.4.7-std — 2026-10-04
 
 ### Ajouté / Added

@@ -14,6 +14,7 @@
 ===============================================================================*/
 
 #include "esp_zigbee_core.h"
+#include "zboss_api.h"
 #include "esp_app_desc.h"
 #include <stdio.h>
 #include <inttypes.h>
@@ -689,6 +690,14 @@ static void zigbee_task(void *pvParameters)
 
         ESP_LOGI(TAG, "Adding %s : Cluster: 0x%04x, attribute: 0x%04x, zbtype: %x, value: %s", linky_label_list[i].label, linky_label_list[i].clusterID, linky_label_list[i].attributeID, linky_label_list[i].zb_type, str_value);
 
+        // Valeurs statiques en lecture seule : on autorise aussi l'envoi (REPORTING), sinon la pile
+        // refuse le report à leur changement (ESP_ERR_NOT_SUPPORTED, 0x106), cf. zigbee_send
+        uint8_t access = linky_label_list[i].zb_access;
+        if (linky_label_list[i].realTime == STATIC_VALUE && access == ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY)
+        {
+            access |= ESP_ZB_ZCL_ATTR_ACCESS_REPORTING;
+        }
+
         switch (linky_label_list[i].clusterID)
         {
         case ESP_ZB_ZCL_CLUSTER_ID_ELECTRICAL_MEASUREMENT:
@@ -698,12 +707,12 @@ static void zigbee_task(void *pvParameters)
         }
         case ESP_ZB_ZCL_CLUSTER_ID_METERING:
         {
-            esp_zb_cluster_add_attr(esp_zb_metering_cluster, ESP_ZB_ZCL_CLUSTER_ID_METERING, linky_label_list[i].attributeID, linky_label_list[i].zb_type, linky_label_list[i].zb_access, ptr_value);
+            esp_zb_cluster_add_attr(esp_zb_metering_cluster, ESP_ZB_ZCL_CLUSTER_ID_METERING, linky_label_list[i].attributeID, linky_label_list[i].zb_type, access, ptr_value);
             break;
         }
         case TICMETER_CLUSTER_ID:
         {
-            esp_zb_custom_cluster_add_custom_attr(esp_zb_ticmeter_cluster, linky_label_list[i].attributeID, linky_label_list[i].zb_type, linky_label_list[i].zb_access, ptr_value);
+            esp_zb_custom_cluster_add_custom_attr(esp_zb_ticmeter_cluster, linky_label_list[i].attributeID, linky_label_list[i].zb_type, access, ptr_value);
             break;
         }
         default:
@@ -786,6 +795,25 @@ static esp_err_t zigbee_report_attribute(uint8_t endpoint, uint16_t clusterID, u
 }
 // Bascule HP/HC : envoi immédiat du libellé tarif (LTARF, lu par Z4D pour le tarif en cours)
 // et de l'heure du Linky, sans attendre la trame suivante ni l'envoi complet.
+/**
+ * @brief Relève rapide pendant duree_ms : le TICMeter est un appareil dormeur qui ne relève ses
+ *        messages que toutes les 4 s, et le routeur ne les garde qu'environ 7,7 s. Les lectures
+ *        envoyées juste après nos mesures (Z4D, Zigbee2MQTT) expiraient presque toutes
+ *        (2026-10-04 : 10 réponses sur 20 ; issues GammaTroniques #17 et #35).
+ */
+void zigbee_turbo_poll(uint32_t duree_ms)
+{
+    if (config_values.zigbee.state != ZIGBEE_PAIRED)
+    {
+        return;
+    }
+    esp_zb_lock_acquire(portMAX_DELAY);
+    zb_zdo_pim_permit_turbo_poll(ZB_TRUE);
+    zb_zdo_pim_start_turbo_poll_continuous(duree_ms);
+    esp_zb_lock_release();
+    ESP_LOGI(TAG, "Turbo poll %lu ms", (unsigned long)duree_ms);
+}
+
 esp_err_t zigbee_send_tarif(void)
 {
     if (config_values.zigbee.state != ZIGBEE_PAIRED || zigbee_state == ZIGBEE_COMMISIONING_ERROR)
@@ -819,6 +847,58 @@ esp_err_t zigbee_send_tarif(void)
 }
 
 char string_buffer[100];
+
+/**
+ * @brief Taille en octets de la valeur ZCL d'un attribut (0 = type inconnu).
+ */
+static uint8_t zigbee_attr_size(const linky_value_t *v)
+{
+    switch (v->zb_type)
+    {
+    case ESP_ZB_ZCL_ATTR_TYPE_U8:
+    case ESP_ZB_ZCL_ATTR_TYPE_S8:
+    case ESP_ZB_ZCL_ATTR_TYPE_BOOL:
+        return sizeof(uint8_t);
+    case ESP_ZB_ZCL_ATTR_TYPE_U16:
+    case ESP_ZB_ZCL_ATTR_TYPE_S16:
+        return sizeof(uint16_t);
+    case ESP_ZB_ZCL_ATTR_TYPE_U24:
+    case ESP_ZB_ZCL_ATTR_TYPE_S24:
+        return 24 / 8;
+    case ESP_ZB_ZCL_ATTR_TYPE_U32:
+    case ESP_ZB_ZCL_ATTR_TYPE_S32:
+        return sizeof(uint32_t);
+    case ESP_ZB_ZCL_ATTR_TYPE_U48:
+    case ESP_ZB_ZCL_ATTR_TYPE_S48:
+        return 48 / 8;
+    case ESP_ZB_ZCL_ATTR_TYPE_U64:
+    case ESP_ZB_ZCL_ATTR_TYPE_S64:
+        return sizeof(uint64_t);
+    case ESP_ZB_ZCL_ATTR_TYPE_CHAR_STRING:
+    case ESP_ZB_ZCL_ATTR_TYPE_OCTET_STRING:
+        return v->size + 1;
+    default:
+        return 0;
+    }
+}
+
+// Valeurs statiques (PREF, PCOUP, contrat, identifiant…) : en lecture seule (ZB_RO), elles
+// n'étaient jamais envoyées, et le coordinateur gardait celles lues à l'appairage (PREF restée
+// à 9 kVA après un passage à 6 kVA, 2026-10-06). On les envoie donc une fois après chaque
+// démarrage, puis à chaque changement. Empreinte FNV-1a de la dernière valeur envoyée.
+#define ZIGBEE_STATIC_MAX 256
+static uint32_t static_last_hash[ZIGBEE_STATIC_MAX];
+static bool static_sent[ZIGBEE_STATIC_MAX];
+
+static uint32_t zigbee_hash(const void *data, uint8_t len)
+{
+    uint32_t h = 2166136261u;
+    for (uint8_t k = 0; k < len; k++)
+    {
+        h = (h ^ ((const uint8_t *)data)[k]) * 16777619u;
+    }
+    return h;
+}
 
 uint64_t temp = 150;
 esp_err_t zigbee_send(linky_data_t *data)
@@ -1007,6 +1087,31 @@ esp_err_t zigbee_send(linky_data_t *data)
             {
                 ESP_LOGE(TAG, "Set attribute failed: 0x%x", status);
                 ret = ESP_FAIL;
+            }
+            // seulement les attributs créés envoyables (lecture seule + REPORTING, cf. création des
+            // attributs) : ceux de 0x0B04 gardent les droits imposés par la pile
+            else if (linky_label_list[i].realTime == STATIC_VALUE && i < ZIGBEE_STATIC_MAX &&
+                     linky_label_list[i].zb_access == ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY &&
+                     (linky_label_list[i].clusterID == ESP_ZB_ZCL_CLUSTER_ID_METERING || linky_label_list[i].clusterID == TICMETER_CLUSTER_ID))
+            {
+                uint8_t size = zigbee_attr_size(&linky_label_list[i]);
+                uint32_t hash = size ? zigbee_hash(ptr_value, size) : 0;
+                if (size && (!static_sent[i] || static_last_hash[i] != hash))
+                {
+                    ESP_LOGI(TAG, "Static value %s: report (%s)", linky_label_list[i].label, static_sent[i] ? "changed" : "first since boot");
+                    esp_zb_lock_acquire(portMAX_DELAY);
+                    esp_err_t rep = zigbee_report_attribute(LINKY_TIC_ENDPOINT, linky_label_list[i].clusterID, linky_label_list[i].attributeID, ptr_value, size);
+                    esp_zb_lock_release();
+                    if (rep == ESP_OK)
+                    {
+                        static_sent[i] = true;
+                        static_last_hash[i] = hash;
+                    }
+                    else
+                    {
+                        ESP_LOGE(TAG, "Static value %s: report failed: 0x%x", linky_label_list[i].label, rep);
+                    }
+                }
             }
         }
         if (zigbee_ota_running)

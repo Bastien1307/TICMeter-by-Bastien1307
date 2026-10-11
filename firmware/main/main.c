@@ -482,6 +482,7 @@ esp_err_t main_send_data(linky_data_t *data)
   case MODE_ZIGBEE:
 
     err = zigbee_send(data);
+    zigbee_turbo_poll(ZIGBEE_TURBO_POLL_MS); // lectures du coordinateur qui suivent nos mesures
     if (err != ESP_OK)
     {
       led_start_pattern(LED_SEND_FAILED);

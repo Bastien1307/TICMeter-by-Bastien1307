@@ -14,6 +14,7 @@
 ===============================================================================*/
 
 // #define LOG_LOCAL_LEVEL ESP_LOG_VERBOSE
+#include <ctype.h>
 #include "esp_log.h"
 #include <linky.h>
 #include "soft_rx.h"
@@ -96,6 +97,7 @@ typedef struct
 static char linky_decode();                                      // Decode the frame
 static char linky_checksum(char *label, char *data, char *time); // Check the checksum
 static bool linky_has_control_char(const char *str);            // Caractère < 0x20 dans la chaîne
+static bool linky_is_number(const char *label, const char *str); // Valeur numérique bien formée
 static void linky_create_debug_frame(linky_debug_t debug);
 static time_t linky_decode_time(char *time); // Decode the time
 esp_err_t linky_handle_auto_check();
@@ -160,7 +162,7 @@ const linky_value_t linky_label_list[] =
     { 39, 000, "Version de la TIC",                  "VTIC",        &linky_data.std.VTIC,          STRING,       2, MODE_STD,  C_ANY,   G_ANY,  STATIC_VALUE,  NONE_CLASS,  "mdi:tag",                             0xFF42, 0x002e,  ZB_RO, ZB_CHARSTR,  }, //TODO: zigbee: when  Meter Identification cluster 0x0B01, 0x000A,  
     { 40, 000, "Date",                               "DATE",        &linky_data.std.DATE,          UINT32_TIME,  0, MODE_STD,  C_ANY,   G_ANY,  STATIC_VALUE,  NONE_CLASS,  "",                                    0x0000, 0x0000,  ZB_NO, ZB_NO,       },
     { 41, 000, "Date et heure Compteur",             "date_time",   &linky_data.std.DATE.time,     UINT64,       0, MODE_STD,  C_ANY,   G_ANY,  STATIC_VALUE,  NONE_CLASS,  "mdi:clipboard-text-clock",            0xFF42, 0x000B,  ZB_RO, ZB_UINT64,   },
-    { 42, 107, "Nom du calendrier tarifaire",        "NGTF",        &linky_data.std.NGTF,          STRING,      16, MODE_STD,  C_ANY,   G_ANY,  STATIC_VALUE,  NONE_CLASS,  "mdi:calendar-clock",                  0xFF42, 0x0000,  ZB_RO, ZB_OCTSTR,   },
+    { 42, 107, "Nom du calendrier tarifaire",        "NGTF",        &linky_data.std.NGTF,          STRING,      16, MODE_STD,  C_ANY,   G_ANY,  STATIC_VALUE,  NONE_CLASS,  "mdi:calendar-clock",                  0xFF42, 0x0000,  ZB_RP, ZB_CHARSTR,   },
     { 43, 108, "Libellé tarif en cours",             "LTARF",       &linky_data.std.LTARF,         STRING,      16, MODE_STD,  C_ANY,   G_ANY,  STATIC_VALUE,  NONE_CLASS,  "mdi:tag-text",                        0xFF42, 0x0039,  ZB_RP, ZB_CHARSTR,  },
 
     { 43, 999, "Index Total Energie soutirée",       "EAST",        &linky_data.std.EAST,          UINT64,       0, MODE_STD,  C_ANY,   G_ANY,  STATIC_VALUE,  ENERGY,      "",                                    0x0702, 0x0000,  ZB_RP, ZB_UINT48,   },
@@ -866,6 +868,15 @@ static char linky_decode()
                 if (strcmp(linky_label_list[j].label, label) == 0)
                 {
                     // ESP_LOGI(TAG, "Found label: %s value: %s", label, value);
+                    // Un chiffre qui gagne le bit 0x40 devient une lettre (« 3242060 » reçu « 32420p0 »),
+                    // invisible pour la somme de contrôle : strtoul s'arrêterait dessus et donnerait un
+                    // index tronqué, donc en baisse. On garde l'ancienne valeur.
+                    if (linky_label_list[j].type != STRING && !linky_is_number(label, value))
+                    {
+                        linky_decode_checksum_error++;
+                        ESP_LOGV(TAG, "%s = %s: not a number, skipped", label, value);
+                        continue;
+                    }
                     switch (linky_label_list[j].type)
                     {
                     case STRING:
@@ -1475,6 +1486,23 @@ static bool linky_has_control_char(const char *str)
         }
     }
     return false;
+}
+
+/**
+ * @brief Vrai si la valeur ne contient que des chiffres (espaces de cadrage tolérés) ;
+ *        PPOT (présence des potentiels) est en hexadécimal
+ */
+static bool linky_is_number(const char *label, const char *str)
+{
+    bool hex = strcmp(label, "PPOT") == 0;
+    for (; *str; str++)
+    {
+        if (!(isdigit((uint8_t)*str) || *str == ' ' || (hex && isxdigit((uint8_t)*str))))
+        {
+            return false;
+        }
+    }
+    return true;
 }
 
 /**
