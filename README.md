@@ -1,12 +1,24 @@
 # TICMeter by Bastien1307 (non officiel / unofficial)
 
 [![licence](https://img.shields.io/badge/License-CC_BY--NC_4.0-lightgrey.svg?style=for-the-badge)](https://creativecommons.org/licenses/by-nc/4.0/)
+[![dernière version / latest release](https://img.shields.io/github/v/release/Bastien1307/TICMeter-by-Bastien1307?style=for-the-badge&label=version)](https://github.com/Bastien1307/TICMeter-by-Bastien1307/releases/latest)
 
 > **Version non officielle** du firmware du [TICMeter de GammaTroniques](https://github.com/GammaTroniques/TICMeter).
 > GammaTroniques n'est ni l'auteur ni responsable de ces modifications et n'apporte aucun support sur cette version.
 >
 > *Unofficial build of the [GammaTroniques TICMeter](https://github.com/GammaTroniques/TICMeter) firmware.
 > GammaTroniques is neither the author of these changes nor responsible for them. English below.*
+
+## 📦 Dernière version / Latest release
+
+### 👉 **[Releases GitHub](https://github.com/Bastien1307/TICMeter-by-Bastien1307/releases)** — dernière / latest : **[V3.4.10-std](https://github.com/Bastien1307/TICMeter-by-Bastien1307/releases/latest)** (2026-10-11)
+
+Chaque release donne ses changements et les fichiers à télécharger (`TICMeter.bin`,
+`storage.bin`, `ota_data_initial.bin`, `SHA256SUMS.txt`). La page web ci-dessous installe
+directement la dernière version.
+
+*Each release lists its changes and the files to download. The web page below installs the
+latest release directly.*
 
 ## 🌐 Page web : connexion, mise à jour et réglages / Web page: connect, update, configure
 
@@ -79,12 +91,45 @@ dans Domoticz (plugin Zigbee for Domoticz), sur l'alimentation du Linky seule.
   `set-std-labels <0|1>`.
 - **Zigbee** : les mises à jour d'attributs prennent désormais le verrou de la pile Zigbee
   (il manquait : accès concurrent possible avec une lecture du coordinateur).
-- **Version 3.3.0** (`V3.3.0-std`), au-dessus de toute version officielle : ni la page de
+- **Numérotation au-dessus de toute version officielle** (`V3.3.0-std` pour la première
+  version, `V3.4.10-std` aujourd'hui ; dernière version officielle : V3.2.13) : ni la page de
   mise à jour GammaTroniques ni un coordinateur Zigbee ne proposeront de « mise à jour »
   qui écraserait la correction. Le champ Zigbee *Date code* se termine par `-std`.
 - Compilation : `htmlmin2` au lieu de `htmlmin`, qui ne s'installe plus en Python 3.13.
 
-Détail : [CHANGELOG.md](CHANGELOG.md).
+### Depuis la V3.3.0
+
+Les points ci-dessus décrivent la première version (`V3.3.0-std`). Les versions suivantes,
+jusqu'à la `V3.4.10-std`, ont ajouté :
+
+- **Bascule heures pleines / heures creuses remontée en quelques secondes** (V3.4.7) : le
+  firmware décode le profil du lendemain envoyé par le Linky (`PJOURF+1`), se réveille 30 s
+  avant chaque changement de tarif et envoie aussitôt le nouveau tarif. Dans Domoticz, la
+  bascule apparaît en quelques secondes au lieu d'environ 1 min 15.
+  Nouvelle commande console `bascule-info` (prochaines bascules, prochain réveil).
+- **Valeurs abîmées sur la ligne TIC rejetées** (V3.4.7 et V3.4.10) : il arrive qu'un bit
+  soit faux sur un caractère sans que la somme de contrôle TIC (6 bits) le voie. Un libellé
+  de tarif pouvait arriver abîmé (« Unknown Tarif » dans Zigbee for Domoticz, environ une
+  fois par jour), un index arriver tronqué et donc sembler baisser. Les lignes contenant un
+  caractère de contrôle et les valeurs numériques contenant autre chose que des chiffres
+  sont désormais rejetées, l'ancienne valeur étant conservée (modes standard et historique
+  pour les valeurs numériques).
+- **Valeurs fixes du compteur envoyées en Zigbee** (V3.4.10) : puissance souscrite,
+  puissance de coupure, numéro de compteur, point de livraison, nom du calendrier tarifaire
+  (`NGTF`, que le coordinateur ne recevait jamais)… Elles partent au démarrage puis à chaque
+  changement, au lieu de n'être connues qu'à l'appairage (après un passage de 9 kVA à 6 kVA,
+  l'ancienne valeur restait affichée).
+- **Relève rapide après chaque envoi** (V3.4.10) : pendant 10 s, le TICMeter interroge son
+  routeur en continu, et les demandes de lecture du coordinateur reçoivent une réponse en
+  moins d'une seconde (environ une sur deux auparavant). Testé avec Zigbee for Domoticz,
+  pas avec Zigbee2MQTT.
+- **`soft-rx-stats`** (V3.3.1) : le score de calibration n'est plus remis à zéro à chaque
+  lecture.
+- **Fichier OTA Zigbee retiré des releases** : il n'a jamais été testé. La mise à jour se
+  fait en USB, par la page web ou avec esptool.
+
+Détail version par version : [releases GitHub](https://github.com/Bastien1307/TICMeter-by-Bastien1307/releases)
+et [CHANGELOG.md](CHANGELOG.md).
 
 ### Installation
 
@@ -190,8 +235,36 @@ instead of 11, contract recognised, peak / off-peak switching reported to Domoti
 **Other changes**: standard-mode labels trimmed (`  HEURE  PLEINE  ` → `HEURE PLEINE`,
 configurable with `set-std-labels 1`); console available in Zigbee mode when USB is
 plugged (`soft-rx-stats`, `set-rx-skew`, `set-std-labels`); Zigbee attribute updates now
-take the Zigbee stack lock; version **3.3.0** (`V3.3.0-std`); `htmlmin2` build dependency.
-See [CHANGELOG.md](CHANGELOG.md).
+take the Zigbee stack lock; version numbers above any official release (`V3.3.0-std` for the
+first build, `V3.4.10-std` today; latest official release: V3.2.13), so neither the
+GammaTroniques update page nor a Zigbee coordinator will offer an "update" that would
+overwrite the fix; `htmlmin2` build dependency.
+
+**Since V3.3.0** (the points above describe the first build, `V3.3.0-std`):
+
+- **Peak / off-peak switching reported within seconds** (V3.4.7): the firmware decodes the
+  next-day profile sent by the Linky (`PJOURF+1`), wakes up 30 s before each tariff change
+  and sends the new tariff immediately (a few seconds in Domoticz instead of about 1 min 15).
+  New console command `bascule-info` (upcoming tariff changes, next wake-up).
+- **Corrupted values on the TIC line discarded** (V3.4.7 and V3.4.10): a single wrong bit in
+  a character can go unseen by the 6-bit TIC checksum. A tariff label could arrive corrupted
+  ("Unknown Tarif" in Zigbee for Domoticz, about once a day), an index could arrive
+  truncated and so appear to go down. Lines containing a control character and numeric
+  values containing anything but digits are now discarded, the previous value being kept
+  (standard and historical modes for numeric values).
+- **Static meter values reported over Zigbee** (V3.4.10): subscribed power, cut-off power,
+  meter serial number, delivery point, tariff calendar name (`NGTF`, which the coordinator
+  never received)… They are sent at startup and whenever they change, instead of only being
+  known at pairing (after going from 9 kVA to 6 kVA, the old value stayed displayed).
+- **Fast polling after each report** (V3.4.10): for 10 s the TICMeter polls its router
+  continuously, and read requests from the coordinator are answered within a second (about
+  one in two before). Tested with Zigbee for Domoticz, not with Zigbee2MQTT.
+- **`soft-rx-stats`** (V3.3.1): the calibration score is no longer reset after each reading.
+- **Zigbee OTA file removed from the releases**: it was never tested. Updating is done over
+  USB, with the web page or esptool.
+
+Details for each version: [GitHub releases](https://github.com/Bastien1307/TICMeter-by-Bastien1307/releases)
+and [CHANGELOG.md](CHANGELOG.md).
 
 **Install**: easiest is the web page 👉 **https://bastien1307.github.io/TICMeter-by-Bastien1307/**
 (Chrome, Edge or Opera on a computer): connect over USB, back up, update and configure the TICMeter
@@ -199,8 +272,18 @@ from the browser. Command line: back up the whole flash first
 (`esptool.py --chip esp32c6 -p <PORT> read_flash 0 0x400000 backup.bin`), then flash the
 [release](../../releases) files at `0x10000` (`ota_data_initial.bin`), `0x17000`
 (`storage.bin`) and `0x30000` (`TICMeter.bin`). Configuration and Zigbee pairing are kept.
+Tested on TICMeter hardware 3.4.2 (ESP32-C6), single-phase Linky, Zigbee mode.
+Do not leave the GammaTroniques update page open: it holds the serial port.
+**Back to the official firmware**: from the GammaTroniques update page, or by writing the
+backup back (`write_flash 0 backup.bin`).
 
 **Domoticz**: in Zigbee mode the TICMeter works with the [Zigbee for Domoticz](https://github.com/zigbeefordomoticz/Domoticz-Zigbee) plugin (the setup this version was tested on) — see the screenshot above, by [pipiche38](https://github.com/pipiche38), author of Zigbee for Domoticz ([PR #36](https://github.com/GammaTroniques/TICMeter/pull/36) on the original repository, never merged). The screenshot shows a standard-mode, single-phase, peak / off-peak setup: orange widgets are for Tempo / EJP contracts only, blue ones for three-phase installations. Full widget list and technical mapping on the Zigbee for Domoticz wiki: [TICMeter page](https://zigbeefordomoticz.github.io/wiki/en-eng/Corner_GammaTroniques.html), [technical page](https://github.com/zigbeefordomoticz/wiki/blob/master/en-eng/Technical/ticmeter-integration.md).
+
+**Build**: ESP-IDF **v5.2.1**, target `esp32c6`, then `idf.py build` in `firmware/`. Apply
+to ESP-IDF the only useful change from the patch in `firmware/patch/`: in
+`components/esp_hw_support/sleep_modes.c`, replace `CONFIG_ESP_CONSOLE_UART_BAUDRATE` with
+`115200` in `UART_FLUSH_US_PER_CHAR` (the provided file comes from another ESP-IDF version
+and does not build as is).
 
 **Support**: this firmware is free and complete. If it helps you, you may buy me a coffee,
 **only if you wish**: **[☕ paypal.me/sebastienRanc](https://paypal.me/sebastienRanc)**
