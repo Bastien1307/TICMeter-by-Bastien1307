@@ -22,9 +22,9 @@ changement pour le mode Zigbee.
 
 ## V3.4.14-std — 2026-11-28
 
-Validée sur notre TICMeter (Linky monophasé, mode standard, HP/HC, Zigbee for Domoticz) pendant
+Validée sur mon TICMeter (Linky monophasé, mode standard, HP/HC, Zigbee for Domoticz) pendant
 5 jours, sans redémarrage ni perte de liaison, avec toutes les bascules HP/HC à l'heure.
-*Validated on our TICMeter for 5 days, without restart or lost link, every tariff change on time.*
+*Validated on my TICMeter for 5 days, without restart or lost link, every tariff change on time.*
 
 ### Ajouté / Added
 
