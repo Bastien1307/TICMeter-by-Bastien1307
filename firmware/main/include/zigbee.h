@@ -50,6 +50,7 @@ extern void zigbee_init_stack();
 extern esp_err_t zigbee_send(linky_data_t *data);
 esp_err_t zigbee_send_tarif(void); // bascule HP/HC : tarif + heure Linky, tout de suite
 #define ZIGBEE_TURBO_POLL_MS 10000
+#define ZIGBEE_REPORT_PAUSE_MS 80 // pause entre deux envois d attribut (rafale = envois perdus)
 void zigbee_turbo_poll(uint32_t duree_ms); // relève rapide des messages en attente chez le routeur
 void zigbee_start_pairing();
 uint8_t zigbee_factory_reset();

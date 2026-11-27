@@ -367,6 +367,51 @@
                                 </label>
                             </div>
                         </div>
+                        <!-- Réglage du récepteur logiciel (mode standard). Ajout de Bastien1307 (2026). -->
+                        <div class="feild">
+                            <h6 class="feild-name">Récepteur logiciel (mode Standard)</h6>
+                            <div class="flex space">
+                                <label class="linky-selector-container">
+                                    <input type="radio" name="soft-rx-mode" value="0" checked>
+                                    <div class="linky-selector">
+                                        <h6 class="black-text">Auto</h6>
+                                    </div>
+                                </label>
+                                <label class="linky-selector-container">
+                                    <input type="radio" name="soft-rx-mode" value="1">
+                                    <div class="linky-selector">
+                                        <h6 class="black-text">Toujours</h6>
+                                    </div>
+                                </label>
+                                <label class="linky-selector-container">
+                                    <input type="radio" name="soft-rx-mode" value="2">
+                                    <div class="linky-selector">
+                                        <h6 class="black-text">Jamais</h6>
+                                    </div>
+                                </label>
+                            </div>
+                            <p>Auto : lecture d'origine d'abord, correction seulement si les données arrivent abîmées.
+                                Jamais : consomme moins (utile en Wi-Fi sans alimentation USB).</p>
+                        </div>
+                        <!-- Diagnostic des redémarrages. Ajout de Bastien1307 (2026). -->
+                        <div class="feild">
+                            <h6 class="feild-name">Diagnostic des redémarrages</h6>
+                            <div class="flex space">
+                                <label class="linky-selector-container">
+                                    <input type="radio" name="diag" value="0" checked>
+                                    <div class="linky-selector">
+                                        <h6 class="black-text">Désactivé</h6>
+                                    </div>
+                                </label>
+                                <label class="linky-selector-container">
+                                    <input type="radio" name="diag" value="1">
+                                    <div class="linky-selector">
+                                        <h6 class="black-text">Activé</h6>
+                                    </div>
+                                </label>
+                            </div>
+                            <p>Activé : envoie la cause du dernier redémarrage (et, après un plantage, son adresse et sa tâche).</p>
+                        </div>
                     </section>
 
                     <section>

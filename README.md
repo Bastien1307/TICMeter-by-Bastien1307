@@ -11,7 +11,7 @@
 
 ## 📦 Dernière version / Latest release
 
-### 👉 **[Releases GitHub](https://github.com/Bastien1307/TICMeter-by-Bastien1307/releases)** — dernière / latest : **[V3.4.10-std](https://github.com/Bastien1307/TICMeter-by-Bastien1307/releases/latest)** (2026-10-11)
+### 👉 **[Releases GitHub](https://github.com/Bastien1307/TICMeter-by-Bastien1307/releases)** — dernière / latest : **[V3.4.14-std](https://github.com/Bastien1307/TICMeter-by-Bastien1307/releases/latest)** (2026-11-28)
 
 Chaque release donne ses changements et les fichiers à télécharger (`TICMeter.bin`,
 `storage.bin`, `ota_data_initial.bin`, `SHA256SUMS.txt`). La page web ci-dessous installe
@@ -92,7 +92,7 @@ dans Domoticz (plugin Zigbee for Domoticz), sur l'alimentation du Linky seule.
 - **Zigbee** : les mises à jour d'attributs prennent désormais le verrou de la pile Zigbee
   (il manquait : accès concurrent possible avec une lecture du coordinateur).
 - **Numérotation au-dessus de toute version officielle** (`V3.3.0-std` pour la première
-  version, `V3.4.10-std` aujourd'hui ; dernière version officielle : V3.2.13) : ni la page de
+  version, `V3.4.14-std` aujourd'hui ; dernière version officielle : V3.2.13) : ni la page de
   mise à jour GammaTroniques ni un coordinateur Zigbee ne proposeront de « mise à jour »
   qui écraserait la correction. Le champ Zigbee *Date code* se termine par `-std`.
 - Compilation : `htmlmin2` au lieu de `htmlmin`, qui ne s'installe plus en Python 3.13.
@@ -100,7 +100,7 @@ dans Domoticz (plugin Zigbee for Domoticz), sur l'alimentation du Linky seule.
 ### Depuis la V3.3.0
 
 Les points ci-dessus décrivent la première version (`V3.3.0-std`). Les versions suivantes,
-jusqu'à la `V3.4.10-std`, ont ajouté :
+jusqu'à la `V3.4.14-std`, ont ajouté :
 
 - **Bascule heures pleines / heures creuses remontée en quelques secondes** (V3.4.7) : le
   firmware décode le profil du lendemain envoyé par le Linky (`PJOURF+1`), se réveille 30 s
@@ -123,6 +123,12 @@ jusqu'à la `V3.4.10-std`, ont ajouté :
   routeur en continu, et les demandes de lecture du coordinateur reçoivent une réponse en
   moins d'une seconde (environ une sur deux auparavant). Testé avec Zigbee for Domoticz,
   pas avec Zigbee2MQTT.
+- **Module plus robuste** (V3.4.14). Plusieurs causes de module figé, de plantage ou de valeurs
+  jamais envoyées jusqu'au redémarrage sont corrigées, et les valeurs texte abîmées par un bit en
+  trop sont rejetées. Réglage du récepteur logiciel (Auto par défaut, Toujours, Jamais) et
+  diagnostic des redémarrages (désactivé par défaut) sur la page de configuration. La mise à jour
+  par la page web écrit aussi la table des partitions (une partition ajoutée en fin de mémoire,
+  réglages et appairage conservés).
 - **`soft-rx-stats`** (V3.3.1) : le score de calibration n'est plus remis à zéro à chaque
   lecture.
 - **Fichier OTA Zigbee retiré des releases** : il n'a jamais été testé. La mise à jour se
@@ -236,7 +242,7 @@ instead of 11, contract recognised, peak / off-peak switching reported to Domoti
 configurable with `set-std-labels 1`); console available in Zigbee mode when USB is
 plugged (`soft-rx-stats`, `set-rx-skew`, `set-std-labels`); Zigbee attribute updates now
 take the Zigbee stack lock; version numbers above any official release (`V3.3.0-std` for the
-first build, `V3.4.10-std` today; latest official release: V3.2.13), so neither the
+first build, `V3.4.14-std` today; latest official release: V3.2.13), so neither the
 GammaTroniques update page nor a Zigbee coordinator will offer an "update" that would
 overwrite the fix; `htmlmin2` build dependency.
 
@@ -259,6 +265,11 @@ overwrite the fix; `htmlmin2` build dependency.
 - **Fast polling after each report** (V3.4.10): for 10 s the TICMeter polls its router
   continuously, and read requests from the coordinator are answered within a second (about
   one in two before). Tested with Zigbee for Domoticz, not with Zigbee2MQTT.
+- **More robust module** (V3.4.14). Several causes of frozen module, crash or values never sent
+  until the next restart are fixed, and text values corrupted by an extra bit are discarded.
+  Software receiver setting (Auto by default, Always, Never) and restart diagnostics (off by
+  default) on the configuration page. Updating with the web page also writes the partition table
+  (one partition added at the end of the flash, settings and pairing kept).
 - **`soft-rx-stats`** (V3.3.1): the calibration score is no longer reset after each reading.
 - **Zigbee OTA file removed from the releases**: it was never tested. Updating is done over
   USB, with the web page or esptool.

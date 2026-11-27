@@ -21,6 +21,7 @@
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "soc/rtc.h"
 #include "esp_pm.h"
 #include "esp_sleep.h"
@@ -206,6 +207,14 @@ static void gpio_vusb_task(void *pvParameter)
                 if (config_values.mode == MODE_ZIGBEE)
                 {
                     esp_zb_sleep_enable(false);
+                    // Console aussi quand le cable est branche apres le demarrage (avant le 2026-11-22, seulement
+                    // si branche au demarrage : un module en marche n'avait pas de console, il fallait le
+                    // redemarrer). Pas avant 60 s : lancee avant la pile Zigbee, elle bloque son initialisation.
+                    if (shell_repl == NULL && esp_timer_get_time() > 60LL * 1000000)
+                    {
+                        ESP_LOGI(TAG, "USB connected, starting Shell...");
+                        shell_init();
+                    }
                 }
             }
             else

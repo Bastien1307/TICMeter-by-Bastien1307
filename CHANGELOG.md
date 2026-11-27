@@ -5,6 +5,77 @@ Modifications apportées au firmware de [GammaTroniques](https://github.com/Gamm
 
 *Changes made to the GammaTroniques firmware, based on its `main` branch (commit `bd2da3f`).*
 
+## V3.4.14-std — 2026-11-28
+
+Validée sur notre TICMeter (Linky monophasé, mode standard, HP/HC, Zigbee for Domoticz) pendant
+5 jours, sans redémarrage ni perte de liaison, avec toutes les bascules HP/HC à l'heure.
+*Validated on our TICMeter for 5 days, without restart or lost link, every tariff change on time.*
+
+### Ajouté / Added
+
+- **Réglage du récepteur logiciel** (mode standard), sur la page de configuration et en console
+  (`set-soft-rx <0|1|2>`). **Auto** (par défaut) démarre en lecture classique et passe au
+  récepteur logiciel si les lectures sont abîmées ou incomplètes. **Toujours** reprend le
+  comportement des versions précédentes. **Jamais** garde la lecture classique seule, comme le
+  firmware officiel.
+  *Software receiver setting (standard mode), on the configuration page and in the console.
+  Auto (default) switches to the software receiver when readings are corrupted or incomplete,
+  Always keeps the previous behaviour, Never uses the plain UART like the official firmware.*
+- **Diagnostic des redémarrages**, désactivé par défaut (page de configuration ou
+  `set-diag <0|1>`). Une fois activé, le TICMeter envoie en Zigbee la cause de son dernier
+  démarrage (`ff42/00f0`), l'adresse et la tâche d'un éventuel plantage (`00f1`, `00f2`) et
+  l'état de la lecture du compteur (`00f3`). Pour garder la trace d'un plantage, la table des
+  partitions gagne une partition `coredump` en fin de mémoire. La page de mise à jour l'écrit
+  sans déplacer les autres partitions, donc réglages et appairage Zigbee sont conservés. Sans
+  elle (application seule flashée avec esptool), le module fonctionne normalement mais ne garde
+  pas de trace des plantages.
+  *Restart diagnostics, off by default (reset reason, crash address and task, reading status sent
+  over Zigbee). The partition table gains a `coredump` partition at the end of the flash. The
+  update page writes it without moving the other partitions, so settings and Zigbee pairing are
+  kept.*
+- **Profil du lendemain (`PJOURF+1`) envoyé en entier** (6 plages au plus) au lieu d'être coupé
+  à 16 caractères.
+  *Next-day profile (`PJOURF+1`) sent in full instead of being cut at 16 characters.*
+- **Durée de fonctionnement calée sur l'horloge du Linky** (mode standard). Elle dérivait de
+  plus de 25 % pendant les mises en veille.
+  *Uptime based on the Linky clock (standard mode). It drifted by more than 25 % during sleep.*
+- **Console USB disponible en branchant le câble sur un module en marche**, sans le redémarrer
+  (il doit tourner depuis plus de 60 s). Le débranchement le redémarre. Nouvelle commande
+  `filet-uart`.
+  *USB console available when the cable is plugged into a running module (up for more than 60 s),
+  without restarting it. Unplugging restarts it. New `filet-uart` command.*
+
+### Corrigé / Fixed
+
+- **Module figé pendant des heures.** Une rafale d'erreurs sur la ligne TIC en mode standard
+  bloquait la tâche de lecture jusqu'au déclenchement du chien de garde. Les interruptions
+  d'erreur de la lecture classique sont désormais coupées en mode standard.
+  *Module frozen for hours. A burst of TIC line errors in standard mode starved the system until
+  the watchdog fired. UART error interrupts are now disabled in standard mode.*
+- **Plantage au changement de mode de lecture** (standard ou historique, en mode Auto). La file
+  de la lecture classique était libérée deux fois.
+  *Crash when switching reading mode (standard or historical). The UART queue was freed twice.*
+- **Valeurs jamais envoyées jusqu'au redémarrage.** Un attribut Zigbee n'était créé que si sa
+  valeur était déjà lue au démarrage, et une première lecture incomplète le laissait absent.
+  *Values never sent until the next restart. A Zigbee attribute was only created if its value had
+  already been read at startup.*
+- **Valeurs perdues dans les rafales d'envoi.** Une pause de 80 ms sépare désormais deux envois
+  Zigbee.
+  *Values lost in report bursts. An 80 ms pause now separates two Zigbee reports.*
+- **Lecture du compteur arrêtée** (index figés, puis module injoignable). La file de la lecture
+  classique pouvait être perdue. Elle est désormais restaurée sans redémarrage.
+  *Meter reading stopped (frozen values, then unreachable). The UART queue could be lost, it is
+  now restored without restarting.*
+- **Valeurs texte abîmées par un bit en trop** ("PAS DE ` MESSAGE", numéro de compteur avec une
+  lettre minuscule), que la somme de contrôle TIC ne voit pas. Une valeur contenant un caractère
+  de code 0x60 ou plus, qu'aucune valeur TIC n'utilise, est rejetée et l'ancienne conservée.
+  *Text values corrupted by an extra bit, unseen by the TIC checksum. Values containing a
+  character of code 0x60 or above are discarded and the previous value kept.*
+- **Robustesse du décodage.** Les copies dans les champs de la trame sont bornées (un séparateur
+  abîmé pouvait déborder la pile), et une lecture hors tableau est supprimée quand une trame ne
+  contient aucun groupe.
+  *Decoding robustness. Bounded copies into frame fields, and an out-of-bounds read removed.*
+
 ## V3.4.10-std — 2026-10-11
 
 ### Ajouté / Added

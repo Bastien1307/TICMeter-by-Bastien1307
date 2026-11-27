@@ -124,6 +124,9 @@ static int skip_command(int argc, char **argv);
 static int soft_rx_stats_command(int argc, char **argv);
 static int set_rx_skew_command(int argc, char **argv);
 static int set_std_labels_command(int argc, char **argv);
+static int set_soft_rx_command(int argc, char **argv);
+static int set_diag_command(int argc, char **argv);
+static int filet_uart_command(int argc, char **argv);
 static int bascule_info_command(int argc, char **argv);
 static int stop_main(int argc, char **argv);
 
@@ -210,6 +213,9 @@ static const shell_cmd_t shell_cmds[] = {
     {"set-rx-skew",                 "Soft RX: force skew in us (0 = auto)",     &set_rx_skew_command,               1, {"<us>"}, {"0 = auto calibration, 1..60 = forced skew"}},
     {"bascule-info",                "Tariff change schedule (PJOURF+1) and next wake-up", &bascule_info_command, 0, {}, {}},
     {"set-std-labels",              "STD labels: 0 = cleaned, 1 = raw",         &set_std_labels_command,            1, {"<raw>"}, {"0 = trim/collapse spaces (default), 1 = raw Linky text"}},
+    {"set-soft-rx",                 "Soft RX: 0 = auto, 1 = always, 2 = never", &set_soft_rx_command,               1, {"<mode>"}, {"0 = UART first, soft RX if frames are damaged (default), 1 = always, 2 = never. Applied after reboot"}},
+    {"set-diag",                    "Diag: 0 = off, 1 = send reset reason",     &set_diag_command,                  1, {"<on>"}, {"0 = not sent (default), 1 = send ff42/00f0-00f2. Applied after reboot"}},
+    {"filet-uart",                  "UART queue safety net: what it saw since boot", &filet_uart_command,          0, {}, {}},
 
 };
 const uint8_t shell_cmds_num = sizeof(shell_cmds) / sizeof(shell_cmd_t);
@@ -962,7 +968,9 @@ static int soft_rx_stats_command(int argc, char **argv)
 {
   soft_rx_stats_t s;
   soft_rx_get_stats(&s, false);
-  printf("Soft RX: %s\n", soft_rx_active() ? "active (STD)" : "inactive");
+  const char *reglage[] = {"auto", "always", "never"};
+  printf("Soft RX: %s, setting: %s\n", soft_rx_active() ? "active (STD)" : "inactive",
+         config_values.soft_rx_mode <= SOFT_RX_JAMAIS ? reglage[config_values.soft_rx_mode] : "?");
   printf("Skew: %ld us (%s)\n", s.skew_us, config_values.rx_skew ? "forced" : "auto");
   printf("Last calibration score: %lu/1000 (ok %lu, ko %lu)\n", s.cal_score, s.cal_ok, s.cal_ko);
   printf("Bytes: %lu, parity errors: %lu, frame errors: %lu, short runs: %lu, glitches: %lu, edge overflow: %lu\n",
@@ -1134,5 +1142,48 @@ static int ping_command(int argc, char **argv)
   // ping
   wifi_ping(ip_addr, NULL);
 
+  return 0;
+}
+/**
+ * @brief Réglage du récepteur logiciel (0 Auto, 1 Toujours, 2 Jamais), pris en compte au redémarrage.
+ *        Ajout de Bastien1307 (2026).
+ */
+static int set_soft_rx_command(int argc, char **argv)
+{
+  if (argc != 2)
+  {
+    return ESP_ERR_INVALID_ARG;
+  }
+  int v = atoi(argv[1]);
+  if (v < SOFT_RX_AUTO || v > SOFT_RX_JAMAIS)
+  {
+    return ESP_ERR_INVALID_ARG;
+  }
+  config_values.soft_rx_mode = v;
+  config_write();
+  printf("Soft RX setting: %d (applied after reboot)\n", v);
+  return 0;
+}
+
+/**
+ * @brief Diagnostic des redémarrages (0 non envoyé, 1 envoyé), pris en compte au redémarrage.
+ *        Ajout de Bastien1307 (2026).
+ */
+static int set_diag_command(int argc, char **argv)
+{
+  if (argc != 2)
+  {
+    return ESP_ERR_INVALID_ARG;
+  }
+  config_values.diag = atoi(argv[1]) ? 1 : 0;
+  config_write();
+  printf("Diag: %d (applied after reboot)\n", config_values.diag);
+  return 0;
+}
+
+// Lecture du filet de la file UART sans redemarrer le module (2026-11-22)
+static int filet_uart_command(int argc, char **argv)
+{
+  linky_filet_uart_print();
   return 0;
 }

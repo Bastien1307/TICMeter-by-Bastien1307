@@ -334,6 +334,14 @@ size_t soft_rx_read(uint8_t *buf, size_t max)
     return xStreamBufferReceive(rx_stream, buf, max, 0);
 }
 
+void soft_rx_reset_skew(void)
+{
+    if (skew_forced_us >= 0)
+        return;
+    skew_us = SKEW_DEFAULT_US;
+    stats.skew_us = skew_us;
+}
+
 void soft_rx_force_skew(int32_t us)
 {
     skew_forced_us = us;

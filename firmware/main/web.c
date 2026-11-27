@@ -62,7 +62,7 @@ void web_preapare_json_data(linky_data_t *data, char count, char **json)
         cJSON *dataItem = cJSON_CreateObject();
         for (uint32_t j = 0; j < linky_label_list_size; j++)
         {
-            if (linky_label_list[j].data == NULL)
+            if (linky_label_list[j].data == NULL || linky_label_masque(j))
             {
                 continue;
             }

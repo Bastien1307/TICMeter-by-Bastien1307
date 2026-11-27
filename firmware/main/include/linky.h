@@ -353,6 +353,10 @@ extern linky_mode_t linky_mode;
 extern linky_contract_t linky_contract;
 
 extern uint8_t linky_three_phase;
+extern uint8_t linky_diag_reset;
+extern uint32_t linky_diag_pc;
+extern char linky_diag_task[18];
+bool linky_label_masque(uint32_t i); // vrai si la valeur ne doit pas être envoyée (diagnostic désactivé)
 extern uint8_t linky_reading;
 extern linky_debug_t linky_debug;
 extern uint32_t linky_free_heap_size;
@@ -418,6 +422,11 @@ esp_err_t linky_compute();
 
 const char *linky_get_str_mode();
 void linky_clear_data();
+
+/**
+ * @brief Affiche ce que le filet de la file UART a vu depuis le demarrage (commande console filet-uart)
+ */
+void linky_filet_uart_print(void);
 
 linky_value_rw_t *linky_get_value_rw(uint32_t index);
 

@@ -274,6 +274,22 @@ esp_err_t save_config_handler(httpd_req_t *req)
     {
         config_values.linky_mode = atoi(item->valuestring);
     }
+    item = cJSON_GetObjectItem(jsonObject, "soft-rx-mode"); // ajout de Bastien1307 (2026)
+    if (item != NULL && item->valuestring != NULL)
+    {
+        int v = atoi(item->valuestring);
+        if (v >= SOFT_RX_AUTO && v <= SOFT_RX_JAMAIS)
+        {
+            config_values.soft_rx_mode = v;
+            ESP_LOGI(TAG, "Soft RX mode: %d", v);
+        }
+    }
+    item = cJSON_GetObjectItem(jsonObject, "diag"); // ajout de Bastien1307 (2026)
+    if (item != NULL && item->valuestring != NULL)
+    {
+        config_values.diag = atoi(item->valuestring) ? 1 : 0;
+        ESP_LOGI(TAG, "Diag: %d", config_values.diag);
+    }
     item = cJSON_GetObjectItem(jsonObject, "server-mode");
     if (item != NULL)
     {
@@ -389,6 +405,8 @@ esp_err_t get_config_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(jsonObject, "wifi-password", strnlen(config_values.password, sizeof(config_values.password)));
     cJSON_AddNumberToObject(jsonObject, "linky-mode", config_values.mode);
     cJSON_AddNumberToObject(jsonObject, "server-mode", config_values.mode);
+    cJSON_AddNumberToObject(jsonObject, "soft-rx-mode", config_values.soft_rx_mode);
+    cJSON_AddNumberToObject(jsonObject, "diag", config_values.diag);
     cJSON_AddStringToObject(jsonObject, "web-url", config_values.web.host);
     cJSON_AddStringToObject(jsonObject, "web-token", config_values.web.token);
     cJSON_AddStringToObject(jsonObject, "web-post", config_values.web.postUrl);

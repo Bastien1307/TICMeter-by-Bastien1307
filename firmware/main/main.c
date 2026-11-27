@@ -13,6 +13,7 @@
  Local Include
 ===============================================================================*/
 #include <stdio.h>
+#include <stdlib.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
@@ -33,6 +34,7 @@
 #include "esp_ota_ops.h"
 #include "esp_pm.h"
 #include "esp_private/esp_clk.h"
+#include "esp_core_dump.h"
 
 #include "common.h"
 #include "linky.h"
@@ -93,12 +95,36 @@ unsigned int main_data_index = 0;
 /*==============================================================================
 Function Implementation
 ===============================================================================*/
+/**
+ * @brief Diagnostic des redémarrages (V3.4.11-diag) : cause du démarrage en cours, et pour un
+ *        plantage, l'adresse et la tâche fautives lues dans la partition coredump (puis effacée).
+ *        Envoyé par Zigbee : ff42/00f0 (cause), 00f1 (adresse), 00f2 (tâche).
+ */
+static void diag_init(void)
+{
+  linky_diag_reset = esp_reset_reason();
+  if (esp_core_dump_image_check() == ESP_OK)
+  {
+    esp_core_dump_summary_t *resume = malloc(sizeof(esp_core_dump_summary_t));
+    if (resume && esp_core_dump_get_summary(resume) == ESP_OK)
+    {
+      linky_diag_pc = resume->exc_pc;
+      strlcpy(linky_diag_task, resume->exc_task, 17);
+      ESP_LOGE(MAIN_TAG, "Plantage précédent : tâche %s, PC 0x%08lx", linky_diag_task, linky_diag_pc);
+    }
+    free(resume);
+    esp_core_dump_image_erase();
+  }
+  ESP_LOGI(MAIN_TAG, "Cause du démarrage : %d", linky_diag_reset);
+}
+
 void app_main(void)
 {
   esp_err_t err;
 
   ESP_LOGI(MAIN_TAG, "Starting TICMeter...");
   power_init();
+  diag_init();
   if (shell_wake_reason() == ESP_RST_BROWNOUT)
   {
     ESP_LOGE(MAIN_TAG, "Brownout detected sleeping for 30s...");

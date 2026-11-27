@@ -5,3 +5,5 @@ venv/
 .cache/
 version.h
 data/*
+test_host/*.o
+test_host/

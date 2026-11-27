@@ -134,6 +134,14 @@ typedef struct
     uint8_t value_saved;
 } index_offset_t;
 
+// Réglage du récepteur logiciel (mode standard). Ajout de Bastien1307 (2026).
+typedef enum
+{
+    SOFT_RX_AUTO = 0,     // UART d'abord, récepteur logiciel seulement si les trames arrivent abîmées
+    SOFT_RX_TOUJOURS = 1, // récepteur logiciel dès le départ
+    SOFT_RX_JAMAIS = 2,   // UART seul, comme le firmware officiel
+} soft_rx_mode_t;
+
 typedef struct
 {
     uint8_t initialized; // should be 1 if the config is initialized
@@ -156,6 +164,8 @@ typedef struct
     uint8_t boot_pairing;
     uint8_t std_raw_labels; // 0 : libellés du mode standard nettoyés (défaut), 1 : texte brut du Linky
     uint8_t rx_skew;        // 0 : calibration automatique (défaut), 1..60 : retard imposé en µs
+    uint8_t soft_rx_mode;   // récepteur logiciel en STD : SOFT_RX_AUTO (défaut), SOFT_RX_TOUJOURS, SOFT_RX_JAMAIS
+    uint8_t diag;           // diagnostic des redémarrages (ff42/00f0-00f2) : 0 non envoyé (défaut), 1 envoyé
 } config_t;
 
 typedef struct

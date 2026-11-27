@@ -1,11 +1,12 @@
 {
   "name": "TICMeter by Bastien1307",
-  "version": "V3.4.10-std",
-  "date": "2026-10-11",
-  "notes": "https://github.com/Bastien1307/TICMeter-by-Bastien1307/releases/tag/V3.4.10-std",
+  "version": "V3.4.14-std",
+  "date": "2026-11-28",
+  "notes": "https://github.com/Bastien1307/TICMeter-by-Bastien1307/releases/tag/V3.4.14-std",
   "parts": [
-    { "path": "V3.4.10-std/ota_data_initial.bin", "offset": 65536 },
-    { "path": "V3.4.10-std/storage.bin", "offset": 94208 },
-    { "path": "V3.4.10-std/TICMeter.bin", "offset": 196608 }
+    { "path": "V3.4.14-std/partition-table.bin", "offset": 32768 },
+    { "path": "V3.4.14-std/ota_data_initial.bin", "offset": 65536 },
+    { "path": "V3.4.14-std/storage.bin", "offset": 94208 },
+    { "path": "V3.4.14-std/TICMeter.bin", "offset": 196608 }
   ]
 }

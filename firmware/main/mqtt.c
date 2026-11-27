@@ -255,7 +255,7 @@ uint8_t mqtt_prepare_publish(linky_data_t *linkydata)
             continue;
         }
 
-        if (linky_label_list[i].data == NULL)
+        if (linky_label_list[i].data == NULL || linky_label_masque(i))
         {
             continue;
         }
@@ -395,7 +395,7 @@ void mqtt_setup_ha_discovery(bool with_delete)
 
     for (int i = 0; i < linky_label_list_size; i++)
     {
-        if (linky_label_list[i].data == NULL)
+        if (linky_label_list[i].data == NULL || linky_label_masque(i))
         {
             continue;
         }
@@ -599,7 +599,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
         {
             if (strcmp(linky_label_list[i].label, name) == 0)
             {
-                if (linky_label_list[i].data == NULL)
+                if (linky_label_list[i].data == NULL || linky_label_masque(i))
                 {
                     ESP_LOGE(TAG, "Null pointer for %s", name);
                     break;

@@ -619,6 +619,13 @@ window.addEventListener("load", function () {
             set_refresh_rate(element);
             continue;
           }
+          if (key == "soft-rx-mode" || key == "diag") {
+            const radio = document.querySelector(`input[name="${key}"][value="${element}"]`);
+            if (radio) {
+              radio.checked = true;
+            }
+            continue;
+          }
           const input = document.querySelector(`[name="${key}"]`);
           if (input) {
             input.value = element;

@@ -24,6 +24,8 @@ void soft_rx_resume(void); // début de fenêtre de lecture
 void soft_rx_pause(void);  // fin de fenêtre : plus d'interruptions, économie d'énergie
 bool soft_rx_active(void);
 size_t soft_rx_read(uint8_t *buf, size_t max);
+// Repart du retard par defaut (calibrage rate ou lecture incomplete), sauf retard impose
+void soft_rx_reset_skew(void);
 void soft_rx_force_skew(int32_t us); // -1 : calibration automatique
 int32_t soft_rx_get_skew(void);
 void soft_rx_get_stats(soft_rx_stats_t *out, bool reset);

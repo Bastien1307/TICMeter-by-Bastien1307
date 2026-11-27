@@ -21,6 +21,7 @@
 #include <inttypes.h>
 #include "nvs_flash.h"
 #include <string.h>
+#include <stdlib.h>
 #include "esp_check.h"
 #include "esp_pm.h"
 #include "esp_timer.h"
@@ -121,7 +122,7 @@ void zigbee_config_report()
             continue;
         }
 
-        if (linky_label_list[i].data == NULL)
+        if (linky_label_list[i].data == NULL || linky_label_masque(i))
         {
             continue;
         }
@@ -564,6 +565,7 @@ static void zigbee_task(void *pvParameters)
 
     // ------------------ Add attributes ------------------
     uint32_t attributes_count = 0;
+    bool *zb_cree = calloc(linky_label_list_size, sizeof(bool)); // attributs deja crees
 
     for (int i = 0; i < linky_label_list_size; i++)
     {
@@ -576,72 +578,24 @@ static void zigbee_task(void *pvParameters)
         {
             continue;
         }
-        if (linky_label_list[i].data == NULL)
+        if (linky_label_list[i].data == NULL || linky_label_masque(i))
         {
             continue;
         }
-
-        switch (linky_label_list[i].type)
+        // attribut cree meme si la valeur n est pas encore lue : sinon, apres une premiere lecture
+        // incomplete au demarrage, il n existait jamais et ses envois echouaient (0x105, 2026-11-07).
+        // Les valeurs invalides ne sont pas envoyees (filtre de zigbee_send).
+        // un meme attribut peut servir a deux libelles (SINSTS/SINSTS1, SMAXSN/SMAXSN1) : le premier seul
+        bool deja_cree = false;
+        for (int j = 0; j < i && !deja_cree; j++)
         {
-        case UINT8:
-        {
-            if (*(uint8_t *)linky_label_list[i].data == UINT8_MAX)
-            {
-                continue;
-            }
-            break;
+            deja_cree = zb_cree[j] && linky_label_list[j].clusterID == linky_label_list[i].clusterID &&
+                        linky_label_list[j].attributeID == linky_label_list[i].attributeID;
         }
-        case UINT16:
+        if (deja_cree)
         {
-            if (*(uint16_t *)linky_label_list[i].data == UINT16_MAX)
-            {
-                continue;
-            }
-            break;
+            continue;
         }
-        case UINT32:
-        {
-            if (*(uint32_t *)linky_label_list[i].data == UINT32_MAX)
-            {
-                continue;
-            }
-            if (linky_label_list[i].device_class == ENERGY && *(uint32_t *)linky_label_list[i].data == 0)
-            {
-                continue;
-            }
-            break;
-        }
-        case UINT64:
-        {
-            if (*(uint64_t *)linky_label_list[i].data == UINT64_MAX)
-            {
-                continue;
-            }
-            if (linky_label_list[i].device_class == ENERGY && *(uint64_t *)linky_label_list[i].data == 0)
-            {
-                continue;
-            }
-            break;
-        }
-        case STRING:
-        {
-            if (strnlen((char *)linky_label_list[i].data, linky_label_list[i].size) == 0)
-            {
-                continue;
-            }
-            break;
-        }
-        case UINT32_TIME:
-        {
-            if (((time_label_t *)linky_label_list[i].data)->value == UINT32_MAX)
-            {
-                continue;
-            }
-            break;
-        }
-        default:
-            break;
-        };
 
         char str_value[100];
         void *ptr_value = linky_label_list[i].data;
@@ -718,8 +672,10 @@ static void zigbee_task(void *pvParameters)
         default:
             break;
         }
+        zb_cree[i] = true;
         attributes_count++;
     }
+    free(zb_cree);
 
     ESP_LOGI(TAG, "Attributes count: %ld", attributes_count);
     if (attributes_count != config_values.zigbee.last_attribute_count)
@@ -936,7 +892,7 @@ esp_err_t zigbee_send(linky_data_t *data)
         {
             continue;
         }
-        if (linky_label_list[i].data == NULL)
+        if (linky_label_list[i].data == NULL || linky_label_masque(i))
         {
             continue;
         }
@@ -1076,6 +1032,9 @@ esp_err_t zigbee_send(linky_data_t *data)
             {
                 ESP_LOGE(TAG, "Report attribute failed: 0x%x", ret);
             }
+            // envois espaces : en rafale, la pile n'en laissait partir que 5 ou 6 par cycle et le
+            // tarif (LTARF) se perdait (nuit du 2026-11-06, bascule HC manquee)
+            vTaskDelay(pdMS_TO_TICKS(ZIGBEE_REPORT_PAUSE_MS));
         }
         else
         {

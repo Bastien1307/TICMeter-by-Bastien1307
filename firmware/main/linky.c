@@ -16,6 +16,7 @@
 // #define LOG_LOCAL_LEVEL ESP_LOG_VERBOSE
 #include <ctype.h>
 #include "esp_log.h"
+#include "esp_timer.h"
 #include <linky.h>
 #include "soft_rx.h"
 #include "bascule.h"
@@ -30,6 +31,7 @@
 #include "tests.h"
 #include "ota.h"
 #include "esp_sleep.h"
+#include "esp_cpu.h"
 
 /*==============================================================================
  Local Define
@@ -97,9 +99,11 @@ typedef struct
 static char linky_decode();                                      // Decode the frame
 static char linky_checksum(char *label, char *data, char *time); // Check the checksum
 static bool linky_has_control_char(const char *str);            // Caractère < 0x20 dans la chaîne
+static bool linky_has_bit40_char(const char *str);              // Caractère >= 0x60 (bit 0x40 gagné) dans la chaîne
 static bool linky_is_number(const char *label, const char *str); // Valeur numérique bien formée
 static void linky_create_debug_frame(linky_debug_t debug);
 static time_t linky_decode_time(char *time); // Decode the time
+static uint64_t linky_uptime_ms(void);        // Durée de fonctionnement, calée sur l'horloge du Linky
 esp_err_t linky_handle_auto_check();
 
 /*==============================================================================
@@ -108,6 +112,21 @@ Public Variable
 // clang-format off
 
 uint32_t linky_free_heap_size = 0;
+
+// Diagnostic des redémarrages, rempli par main.c au démarrage (diag_init)
+uint8_t linky_diag_reset = 0;      // esp_reset_reason() du démarrage en cours
+uint32_t linky_diag_pc = 0;        // adresse du plantage précédent (0 = aucun)
+char linky_diag_task[18] = "";     // tâche du plantage précédent (+2 : conversion Zigbee sur place)
+// Diagnostic du recepteur logiciel apres chaque lecture : bit 24 actif, bit 25 bascule Auto faite,
+// bit 26 SINSTS absent, bits 16-23 champs lus (max 255), bits 8-15 score du dernier calibrage / 4,
+// bits 0-7 erreurs de checksum de la lecture (max 255)
+uint32_t linky_diag_rx = 0;
+
+/**
+ * @brief Vrai si l'entrée i de linky_label_list est une valeur de diagnostic et que le réglage « diag »
+ *        est désactivé : elle n'est alors ni déclarée ni envoyée. Ajout de Bastien1307 (2026).
+ */
+bool linky_label_masque(uint32_t i);
 
 const linky_value_t linky_label_list[] =
 {   
@@ -257,7 +276,7 @@ const linky_value_t linky_label_list[] =
     {116, 000, "Index tarifaire en cours",           "NTARF",       &linky_data.std.NTARF,         UINT16,       0, MODE_STD,  C_ANY,   G_ANY,  STATIC_VALUE,  NONE_CLASS,  "",                                    0xFF42, 0x0025,  ZB_RO, ZB_UINT16,   },
     {117, 000, "N° jours en cours fournisseur",      "NJOURF",      &linky_data.std.NJOURF,        UINT16,       0, MODE_STD,  C_ANY,   G_ANY,  STATIC_VALUE,  NONE_CLASS,  "",                                    0xFF42, 0x0026,  ZB_RO, ZB_UINT16    },
     {118, 000, "N° prochain jour fournisseur",       "NJOURF+1",    &linky_data.std.NJOURF_1,      UINT16,       0, MODE_STD,  C_ANY,   G_ANY,  STATIC_VALUE,  NONE_CLASS,  "",                                    0xFF42, 0x0027,  ZB_RO, ZB_UINT16    },
-    {119, 000, "Profil du prochain jour",            "PJOURF+1",    &linky_data.std.PJOURF_1,      STRING,      16, MODE_STD,  C_ANY,   G_ANY,  STATIC_VALUE,  NONE_CLASS,  "mdi:sun-clock",                       0xFF42, 0x0028,  ZB_RO, ZB_CHARSTR   },
+    {119, 000, "Profil du prochain jour",            "PJOURF+1",    &linky_data.std.PJOURF_1,      STRING,      53, MODE_STD,  C_ANY,   G_ANY,  STATIC_VALUE,  NONE_CLASS,  "mdi:sun-clock",                       0xFF42, 0x0028,  ZB_RO, ZB_CHARSTR   },
     {120, 000, "Profil du prochain jour pointe",     "PPOINTE",     &linky_data.std.PPOINTE,       STRING,      58, MODE_STD,  C_ANY,   G_ANY,  STATIC_VALUE,  NONE_CLASS,  "mdi:sun-clock",                       0xFF42, 0x0029,  ZB_RO, ZB_CHARSTR   },
     //---------------------------Home Assistant Specific ------------------------------------------------
     {121, 103, "Temps d'actualisation",              "now-refresh", &config_values.refresh_rate,   UINT16,       0,      ANY,  C_ANY,   G_ANY,  STATIC_VALUE,  TIME,        "mdi:refresh",                         0xFF42, 0x0002,  ZB_RW, ZB_UINT16    },
@@ -265,6 +284,11 @@ const linky_value_t linky_label_list[] =
     {123, 105, "Mode TIC",                           "mode-tic",    &linky_mode,                   UINT16,       0,      ANY,  C_ANY,   G_ANY,  STATIC_VALUE,  NONE_CLASS,  "mdi:translate",                       0xFF42, 0x002c,  ZB_RO, ZB_UINT8     },
     {124, 106, "Mode Electrique",                    "mode-elec",   &linky_three_phase,            UINT16,       0,      ANY,  C_ANY,   G_ANY,  STATIC_VALUE,  NONE_CLASS,  "mdi:power-plug-outline",              0xFF42, 0x002a,  ZB_RO, ZB_UINT8     },
     {125, 104, "Temps de fonctionnement",            "uptime",      &linky_data.uptime,            UINT64,       0,      ANY,  C_ANY,   G_ANY,  REAL_TIME,     TIME_M,      "mdi:clock-time-eight-outline",        0xFF42, 0x002d,  ZB_RO, ZB_UINT48    },
+    //---------------------------Diagnostic des redémarrages (V3.4.11-diag) -----------------------------
+    {127, 000, "Cause du redémarrage",               "reset-reason", &linky_diag_reset,            UINT8,        0,      ANY,  C_ANY,   G_ANY,  REAL_TIME   ,  NONE_CLASS,  "",                                    0xFF42, 0x00f0,  ZB_RP, ZB_UINT8     },
+    {128, 000, "Adresse du plantage",                "crash-pc",    &linky_diag_pc,                UINT32,       0,      ANY,  C_ANY,   G_ANY,  REAL_TIME   ,  NONE_CLASS,  "",                                    0xFF42, 0x00f1,  ZB_RP, ZB_UINT32    },
+    {129, 000, "Tâche du plantage",                  "crash-task",  linky_diag_task,               STRING,      16,      ANY,  C_ANY,   G_ANY,  REAL_TIME   ,  NONE_CLASS,  "",                                    0xFF42, 0x00f2,  ZB_RP, ZB_CHARSTR   },
+    {130, 000, "Diagnostic récepteur",               "diag-rx",     &linky_diag_rx,                UINT32,       0,      ANY,  C_ANY,   G_ANY,  REAL_TIME   ,  NONE_CLASS,  "",                                    0xFF42, 0x00f3,  ZB_RP, ZB_UINT32    },
     {126, 000, "Mise à jour disponible",             "update",      &ota_available,                UINT8,        0,      ANY,  C_ANY,   G_ANY,  STATIC_VALUE,  CLASS_BOOL,  "mdi:download",                        0x0000, 0x0000,  ZB_NO, ZB_NO        },
  // {127, 000, "Dernière actualisation",             "timestamp",   &linky_data.timestamp,         UINT64,       0,      ANY,  C_ANY,   G_ANY,  STATIC_VALUE,  TIMESTAMP,   "",                                    0x0000, 0x0000,  ZB_NO, ZB_NO        },
  // {128, 000, "Free RAM",                           "free-ram",    &linky_free_heap_size,         UINT32,       0,      ANY,  C_ANY,   G_ANY,  REAL_TIME,     BYTES,       "",                                    0x0000, 0x0000,  ZB_NO, ZB_NO        },
@@ -275,7 +299,7 @@ const int32_t linky_label_list_size = sizeof(linky_label_list) / sizeof(linky_la
 
 linky_value_rw_t linky_rw_values[sizeof(linky_label_list) / sizeof(linky_label_list[0])] = {0};
 
-const void *linky_protected_data[] = {&config_values.refresh_rate, &linky_mode, &linky_three_phase, &ota_available};
+const void *linky_protected_data[] = {&config_values.refresh_rate, &linky_mode, &linky_three_phase, &ota_available, &linky_diag_reset, &linky_diag_pc, linky_diag_task, &linky_diag_rx};
 const uint8_t linky_protected_data_size = sizeof(linky_protected_data) / sizeof(linky_protected_data[0]);
 linky_data_t linky_data;        // The data
 linky_mode_t linky_mode = NONE; // The mode of the linky
@@ -382,6 +406,7 @@ const char *const linky_str_mode[] = {
 ===============================================================================*/
 static char linky_uart_rx = 0; // The RX pin of the linky
 // static char *linky_frame = NULL;             // The received frame from the linky
+static bool linky_heure_ete = false;         // Saison de la dernière horodate DATE lue (E = été)
 static uint8_t linky_group_separator = 0x20; // The group separator character (changes depending on the mode) (0x20 in historique mode, 0x09 in standard mode)
 uint32_t linky_frame_size = 0;               // The size of the frame
 static const char linky_std_debug_buffer[] = {0x2, 0xa, 0x41, 0x44, 0x53, 0x43, 0x9, 0x58, 0x58, 0x58, 0x58, 0x58, 0x58, 0x58, 0x58, 0x58, 0x58, 0x58, 0x58, 0x9, 0x2d, 0xd, 0xa, 0x56, 0x54, 0x49, 0x43, 0x9, 0x30, 0x32, 0x9, 0x4a, 0xd, 0xa, 0x44, 0x41, 0x54, 0x45, 0x9, 0x48, 0x32, 0x34, 0x30, 0x31, 0x30, 0x37, 0x31, 0x37, 0x35, 0x38, 0x31, 0x30, 0x9, 0x9, 0x45, 0xd, 0xa, 0x4e, 0x47, 0x54, 0x46, 0x9, 0x20, 0x20, 0x20, 0x20, 0x20, 0x54, 0x45, 0x4d, 0x50, 0x4f, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x9, 0x46, 0xd, 0xa, 0x4c, 0x54, 0x41, 0x52, 0x46, 0x9, 0x20, 0x20, 0x20, 0x20, 0x48, 0x50, 0x20, 0x20, 0x42, 0x4c, 0x45, 0x55, 0x20, 0x20, 0x20, 0x20, 0x9, 0x2b, 0xd, 0xa, 0x45, 0x41, 0x53, 0x54, 0x9, 0x30, 0x35, 0x30, 0x30, 0x31, 0x39, 0x32, 0x32, 0x36, 0x9, 0x28, 0xd, 0xa, 0x45, 0x41, 0x53, 0x46, 0x30, 0x31, 0x9, 0x30, 0x32, 0x32, 0x32, 0x33, 0x35, 0x33, 0x34, 0x30, 0x9, 0x37, 0xd, 0xa, 0x45, 0x41, 0x53, 0x46, 0x30, 0x32, 0x9, 0x30, 0x32, 0x36, 0x35, 0x38, 0x37, 0x32, 0x37, 0x30, 0x9, 0x48, 0xd, 0xa, 0x45, 0x41, 0x53, 0x46, 0x30, 0x33, 0x9, 0x30, 0x30, 0x30, 0x34, 0x32, 0x35, 0x36, 0x39, 0x36, 0x9, 0x44, 0xd, 0xa, 0x45, 0x41, 0x53, 0x46, 0x30, 0x34, 0x9, 0x30, 0x30, 0x30, 0x34, 0x39, 0x34, 0x36, 0x31, 0x34, 0x9, 0x41, 0xd, 0xa, 0x45, 0x41, 0x53, 0x46, 0x30, 0x35, 0x9, 0x30, 0x30, 0x30, 0x31, 0x31, 0x35, 0x30, 0x34, 0x35, 0x9, 0x36, 0xd, 0xa, 0x45, 0x41, 0x53, 0x46, 0x30, 0x36, 0x9, 0x30, 0x30, 0x30, 0x31, 0x36, 0x31, 0x32, 0x36, 0x31, 0x9, 0x38, 0xd, 0xa, 0x45, 0x41, 0x53, 0x46, 0x30, 0x37, 0x9, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x9, 0x28, 0xd, 0xa, 0x45, 0x41, 0x53, 0x46, 0x30, 0x38, 0x9, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x9, 0x29, 0xd, 0xa, 0x45, 0x41, 0x53, 0x46, 0x30, 0x39, 0x9, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x9, 0x2a, 0xd, 0xa, 0x45, 0x41, 0x53, 0x46, 0x31, 0x30, 0x9, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x9, 0x22, 0xd, 0xa, 0x45, 0x41, 0x53, 0x44, 0x30, 0x31, 0x9, 0x30, 0x32, 0x30, 0x39, 0x37, 0x36, 0x37, 0x33, 0x38, 0x9, 0x4a, 0xd, 0xa, 0x45, 0x41, 0x53, 0x44, 0x30, 0x32, 0x9, 0x30, 0x32, 0x35, 0x30, 0x33, 0x33, 0x37, 0x33, 0x35, 0x9, 0x3d, 0xd, 0xa, 0x45, 0x41, 0x53, 0x44, 0x30, 0x33, 0x9, 0x30, 0x30, 0x31, 0x37, 0x39, 0x39, 0x33, 0x34, 0x33, 0x9, 0x46, 0xd, 0xa, 0x45, 0x41, 0x53, 0x44, 0x30, 0x34, 0x9, 0x30, 0x30, 0x32, 0x32, 0x30, 0x39, 0x34, 0x31, 0x30, 0x9, 0x35, 0xd, 0xa, 0x49, 0x52, 0x4d, 0x53, 0x31, 0x9, 0x30, 0x31, 0x37, 0x9, 0x36, 0xd, 0xa, 0x55, 0x52, 0x4d, 0x53, 0x31, 0x9, 0x32, 0x32, 0x37, 0x9, 0x45, 0xd, 0xa, 0x50, 0x52, 0x45, 0x46, 0x9, 0x31, 0x32, 0x9, 0x42, 0xd, 0xa, 0x50, 0x43, 0x4f, 0x55, 0x50, 0x9, 0x31, 0x32, 0x9, 0x5c, 0xd, 0xa, 0x53, 0x49, 0x4e, 0x53, 0x54, 0x53, 0x9, 0x30, 0x33, 0x39, 0x30, 0x30, 0x9, 0x52, 0xd, 0xa, 0x53, 0x4d, 0x41, 0x58, 0x53, 0x4e, 0x9, 0x48, 0x32, 0x34, 0x30, 0x31, 0x30, 0x37, 0x30, 0x32, 0x34, 0x37, 0x32, 0x33, 0x9, 0x30, 0x38, 0x36, 0x31, 0x31, 0x9, 0x3d, 0xd, 0xa, 0x53, 0x4d, 0x41, 0x58, 0x53, 0x4e, 0x2d, 0x31, 0x9, 0x48, 0x32, 0x34, 0x30, 0x31, 0x30, 0x36, 0x30, 0x33, 0x33, 0x37, 0x32, 0x35, 0x9, 0x30, 0x39, 0x39, 0x34, 0x31, 0x9, 0x23, 0xd, 0xa, 0x43, 0x43, 0x41, 0x53, 0x4e, 0x9, 0x48, 0x32, 0x34, 0x30, 0x31, 0x30, 0x37, 0x31, 0x37, 0x33, 0x30, 0x30, 0x30, 0x9, 0x30, 0x33, 0x35, 0x39, 0x34, 0x9, 0x49, 0xd, 0xa, 0x43, 0x43, 0x41, 0x53, 0x4e, 0x2d, 0x31, 0x9, 0x48, 0x32, 0x34, 0x30, 0x31, 0x30, 0x37, 0x31, 0x37, 0x30, 0x30, 0x30, 0x30, 0x9, 0x30, 0x33, 0x36, 0x36, 0x38, 0x9, 0x26, 0xd, 0xa, 0x55, 0x4d, 0x4f, 0x59, 0x31, 0x9, 0x48, 0x32, 0x34, 0x30, 0x31, 0x30, 0x37, 0x31, 0x37, 0x35, 0x30, 0x30, 0x30, 0x9, 0x32, 0x32, 0x35, 0x9, 0x32, 0xd, 0xa, 0x53, 0x54, 0x47, 0x45, 0x9, 0x30, 0x31, 0x33, 0x41, 0x43, 0x34, 0x30, 0x31, 0x9, 0x52, 0xd, 0xa, 0x44, 0x50, 0x4d, 0x32, 0x9, 0x20, 0x32, 0x34, 0x30, 0x31, 0x30, 0x38, 0x30, 0x36, 0x30, 0x30, 0x30, 0x30, 0x9, 0x30, 0x30, 0x9, 0x23, 0xd, 0xa, 0x46, 0x50, 0x4d, 0x32, 0x9, 0x20, 0x32, 0x34, 0x30, 0x31, 0x30, 0x39, 0x30, 0x36, 0x30, 0x30, 0x30, 0x30, 0x9, 0x30, 0x30, 0x9, 0x26, 0xd, 0xa, 0x4d, 0x53, 0x47, 0x31, 0x9, 0x50, 0x41, 0x53, 0x20, 0x44, 0x45, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x4d, 0x45, 0x53, 0x53, 0x41, 0x47, 0x45, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x9, 0x3c, 0xd, 0xa, 0x50, 0x52, 0x4d, 0x9, 0x30, 0x39, 0x33, 0x31, 0x32, 0x33, 0x30, 0x30, 0x39, 0x32, 0x36, 0x36, 0x39, 0x35, 0x9, 0x38, 0xd, 0xa, 0x52, 0x45, 0x4c, 0x41, 0x49, 0x53, 0x9, 0x30, 0x30, 0x30, 0x9, 0x42, 0xd, 0xa, 0x4e, 0x54, 0x41, 0x52, 0x46, 0x9, 0x30, 0x32, 0x9, 0x4f, 0xd, 0xa, 0x4e, 0x4a, 0x4f, 0x55, 0x52, 0x46, 0x9, 0x30, 0x30, 0x9, 0x26, 0xd, 0xa, 0x4e, 0x4a, 0x4f, 0x55, 0x52, 0x46, 0x2b, 0x31, 0x9, 0x30, 0x30, 0x9, 0x42, 0xd, 0xa, 0x50, 0x4a, 0x4f, 0x55, 0x52, 0x46, 0x2b, 0x31, 0x9, 0x30, 0x30, 0x30, 0x30, 0x34, 0x30, 0x30, 0x31, 0x20, 0x30, 0x36, 0x30, 0x30, 0x34, 0x30, 0x30, 0x32, 0x20, 0x32, 0x32, 0x30, 0x30, 0x34, 0x30, 0x30, 0x31, 0x20, 0x4e, 0x4f, 0x4e, 0x55, 0x54, 0x49, 0x4c, 0x45, 0x20, 0x4e, 0x4f, 0x4e, 0x55, 0x54, 0x49, 0x4c, 0x45, 0x20, 0x4e, 0x4f, 0x4e, 0x55, 0x54, 0x49, 0x4c, 0x45, 0x20, 0x4e, 0x4f, 0x4e, 0x55, 0x54, 0x49, 0x4c, 0x45, 0x20, 0x4e, 0x4f, 0x4e, 0x55, 0x54, 0x49, 0x4c, 0x45, 0x20, 0x4e, 0x4f, 0x4e, 0x55, 0x54, 0x49, 0x4c, 0x45, 0x20, 0x4e, 0x4f, 0x4e, 0x55, 0x54, 0x49, 0x4c, 0x45, 0x20, 0x4e, 0x4f, 0x4e, 0x55, 0x54, 0x49, 0x4c, 0x45, 0x9, 0x2e, 0xd, 0xa, 0x50, 0x50, 0x4f, 0x49, 0x4e, 0x54, 0x45, 0x9, 0x30, 0x30, 0x30, 0x30, 0x34, 0x30, 0x30, 0x35, 0x20, 0x30, 0x36, 0x30, 0x30, 0x34, 0x30, 0x30, 0x36, 0x20, 0x32, 0x32, 0x30, 0x30, 0x34, 0x30, 0x30, 0x35, 0x20, 0x4e, 0x4f, 0x4e, 0x55, 0x54, 0x49, 0x4c, 0x45, 0x20, 0x4e, 0x4f, 0x4e, 0x55, 0x54, 0x49, 0x4c, 0x45, 0x20, 0x4e, 0x4f, 0x4e, 0x55, 0x54, 0x49, 0x4c, 0x45, 0x20, 0x4e, 0x4f, 0x4e, 0x55, 0x54, 0x49, 0x4c, 0x45, 0x20, 0x4e, 0x4f, 0x4e, 0x55, 0x54, 0x49, 0x4c, 0x45, 0x20, 0x4e, 0x4f, 0x4e, 0x55, 0x54, 0x49, 0x4c, 0x45, 0x20, 0x4e, 0x4f, 0x4e, 0x55, 0x54, 0x49, 0x4c, 0x45, 0x20, 0x4e, 0x4f, 0x4e, 0x55, 0x54, 0x49, 0x4c, 0x45, 0x9, 0x27, 0xd, 0x3};
@@ -401,6 +426,41 @@ uint32_t linky_last_group_count = 0;
 static QueueHandle_t linky_uart_queue;
 static TaskHandle_t linky_uart_task_handle = NULL;
 static bool uart_error = false;
+
+// File UART perdue (NULL alors que le pilote tourne) : vu le 2026-11-10 02:42, le module a tourné
+// 2,5 jours sans rien lire. La tâche UART le signale, la lecture suivante réinstalle le pilote.
+// Pas de redémarrage : le module vit sur son condensateur, un redémarrage le vide.
+#define LINKY_UART_PERTE_S 10
+static volatile bool linky_uart_reparation_demandee = false;
+// Trace du filet de la file UART, lisible a tout moment par la commande console filet-uart (sans
+// redemarrage : brancher le cable ne redemarre pas le module). Le message ESP_LOGE n'est vu que si
+// quelqu'un ecoute la console a cet instant precis (2026-11-22).
+static uint32_t linky_filet_restaurations = 0;   // file remise a NULL puis restauree depuis la copie
+static int64_t linky_filet_premiere_us = 0;      // esp_timer_get_time() de la premiere restauration
+static int64_t linky_filet_derniere_us = 0;      // ... et de la derniere
+static char linky_filet_voisines[192] = "";      // voisines en memoire lors de la premiere restauration
+static uint32_t linky_filet_reparations = 0;     // reinstallations du pilote (file perdue sans copie)
+static uint32_t linky_filet_secondes_sans_file = 0; // secondes passees avec linky_uart_queue == NULL
+
+// Piège matériel (gratuit en énergie) : toute écriture de linky_uart_queue hors des deux endroits
+// légitimes (installation du pilote, linky_stop) provoque une panique, pile d'appels en coredump.
+// But : trouver qui écrase la variable. Retirer une fois l'auteur trouvé.
+#define LINKY_UART_WATCHPOINT 0
+static void linky_uart_garde(bool active)
+{
+    if (active)
+    {
+        esp_err_t ret = esp_cpu_set_watchpoint(LINKY_UART_WATCHPOINT, &linky_uart_queue, sizeof(linky_uart_queue), ESP_CPU_WATCHPOINT_STORE);
+        if (ret != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Piege sur la file UART non pose : %s", esp_err_to_name(ret));
+        }
+    }
+    else
+    {
+        esp_cpu_clear_watchpoint(LINKY_UART_WATCHPOINT);
+    }
+}
 
 /*==============================================================================
 Function Implementation
@@ -425,18 +485,158 @@ const char *linky_get_str_contract()
     return str;
 }
 
+/**
+ * @brief En STD, les octets viennent du récepteur logiciel : les erreurs parité/trame de l'UART
+ *        matériel (des milliers par cycle, signal déformé) ne servent à rien. Les couper évite
+ *        qu'une rafale d'événements affame IDLE et déclenche le chien de garde (plantage du
+ *        2026-10-19 dans uart_event_task).
+ */
+static void linky_uart_error_intr(bool actif)
+{
+    if (!uart_is_driver_installed(LINKY_UART))
+    {
+        return;
+    }
+    // bits UART_INTR_PARITY_ERR (2), UART_INTR_FRAM_ERR (3), UART_INTR_BRK_DET (7) de hal/uart_ll.h
+    const uint32_t masque = (1 << 2) | (1 << 3) | (1 << 7);
+    if (actif)
+    {
+        uart_enable_intr_mask(LINKY_UART, masque);
+    }
+    else
+    {
+        uart_disable_intr_mask(LINKY_UART, masque);
+    }
+}
+
+// Mode Auto : le récepteur logiciel prend le relais dès SOFT_RX_AUTO_SEUIL erreurs de checksum sur une lecture,
+// ou dès que les erreurs dépassent 10 % des champs lus. Un seuil absolu élevé (20) ne suffisait pas : sur
+// l'alimentation du Linky seule, les lectures sont courtes et restaient sous le seuil (constaté le 2026-11-01).
+#define SOFT_RX_AUTO_SEUIL 3
+
+/**
+ * @brief Démarre (ou non) le récepteur logiciel en mode standard, selon le réglage « soft-rx-mode ».
+ *        Toujours : dès le départ. Auto et Jamais : UART seul pour commencer.
+ *        Ajout de Bastien1307 (2026).
+ */
+// Mode Auto : vrai une fois la bascule faite, garde le recepteur logiciel jusqu'au redemarrage
+// meme apres un passage par le mode historique (qui l'arrete)
+static bool linky_soft_rx_auto_bascule = false;
+
+static void linky_soft_rx_appliquer(void)
+{
+    if (linky_mode != MODE_STD)
+    {
+        return;
+    }
+    switch (config_values.soft_rx_mode)
+    {
+    case SOFT_RX_TOUJOURS:
+        soft_rx_start(linky_uart_rx);
+        break;
+    case SOFT_RX_JAMAIS:
+        ESP_LOGI(TAG, "Récepteur logiciel désactivé par la config (UART seul)");
+        break;
+    default:
+        if (linky_soft_rx_auto_bascule)
+        {
+            // Auto deja bascule : un passage par le mode historique (lecture ratee) l'a arrete, on le relance
+            soft_rx_start(linky_uart_rx);
+        }
+        else if (!soft_rx_active())
+        {
+            ESP_LOGI(TAG, "Récepteur logiciel en Auto : UART d'abord");
+        }
+        break;
+    }
+}
+
+/**
+ * @brief Mode Auto : après une lecture par l'UART, passe au récepteur logiciel si la lecture a échoué
+ *        ou si les trames arrivent abîmées. Reste actif jusqu'au prochain redémarrage.
+ *        Ajout de Bastien1307 (2026).
+ */
+static void linky_soft_rx_auto(char ret, uint32_t erreurs, bool sinsts_manquant)
+{
+    if (linky_mode != MODE_STD || config_values.soft_rx_mode != SOFT_RX_AUTO)
+    {
+        return;
+    }
+    if (soft_rx_active())
+    {
+        // deja bascule mais lecture incomplete : calibrage sans doute faux, on repart du retard par defaut
+        if (sinsts_manquant)
+        {
+            ESP_LOGW(TAG, "Récepteur logiciel actif mais SINSTS absent : retard remis par défaut (%ld erreurs)", erreurs);
+            soft_rx_reset_skew();
+        }
+        return;
+    }
+    // SINSTS est dans chaque trame standard : absent d'une lecture complete = trames mal lues par l'UART,
+    // meme avec peu d'erreurs de checksum (cas de l'alimentation par le Linky seul)
+    if (ret == 0 || sinsts_manquant || erreurs >= SOFT_RX_AUTO_SEUIL || erreurs * 10 > linky_last_decode_count)
+    {
+        ESP_LOGW(TAG, "Trames abîmées (lecture %s, %ld erreurs de checksum%s) : récepteur logiciel activé",
+                 ret == 0 ? "échouée" : "réussie", erreurs, sinsts_manquant ? ", SINSTS absent" : "");
+        linky_soft_rx_auto_bascule = true;
+        soft_rx_start(linky_uart_rx);
+    }
+}
+
 static void uart_event_task(void *pvParameters)
 {
     uart_event_t event;
+    uint32_t erreurs_suite = 0; // événements d'erreur reçus d'affilée
+    uint32_t perte_s = 0;       // secondes passées sans file UART
+    // Copie de la file sur la pile de la tâche, hors de la zone écrasée (2026-11-10 et 2026-11-13 06:08 :
+    // linky_uart_queue remise à NULL alors que le pilote tourne, le piège ne voit rien car le processeur
+    // est éteint pendant les veilles). Le pilote n'est jamais réinstallé hors linky_stop/linky_uart_reparer,
+    // donc la file reste la même tant que le pilote est installé.
+    QueueHandle_t file = NULL;
+    bool ecrasement_signale = false;
     for (;;)
     {
+        if (linky_uart_queue != NULL)
+        {
+            file = linky_uart_queue; // suit aussi une réinstallation
+        }
+        else if (file != NULL && uart_is_driver_installed(LINKY_UART))
+        {
+            if (!ecrasement_signale)
+            {
+                // voisines en mémoire : plusieurs à 0 = remise à zéro en bloc
+                ESP_LOGE(TAG, "File UART ecrasee, restauree. Voisines : tache=%p auto=%d groupes=%lu crc=%lu memes=%lu decode=%lu trame=%lu pm=%p",
+                         linky_uart_task_handle, linky_soft_rx_auto_bascule, linky_last_group_count,
+                         linky_decode_checksum_error, linky_same_feilds_count, linky_last_decode_count,
+                         linky_frame_size, linky_pm_lock);
+                snprintf(linky_filet_voisines, sizeof(linky_filet_voisines),
+                         "tache=%p auto=%d groupes=%lu crc=%lu memes=%lu decode=%lu trame=%lu pm=%p",
+                         linky_uart_task_handle, linky_soft_rx_auto_bascule, linky_last_group_count,
+                         linky_decode_checksum_error, linky_same_feilds_count, linky_last_decode_count,
+                         linky_frame_size, linky_pm_lock);
+                linky_filet_premiere_us = esp_timer_get_time();
+                ecrasement_signale = true;
+            }
+            linky_filet_restaurations++;
+            linky_filet_derniere_us = esp_timer_get_time();
+            linky_uart_garde(false);
+            linky_uart_queue = file;
+            linky_uart_garde(true);
+        }
+
         // Waiting for UART event.
         if (linky_uart_queue == NULL)
         {
             ESP_LOGE(TAG, "linky_uart_queue is NULL");
+            linky_filet_secondes_sans_file++;
+            if (++perte_s >= LINKY_UART_PERTE_S)
+            {
+                linky_uart_reparation_demandee = true; // traitée au début de la lecture suivante
+            }
             vTaskDelay(1000 / portTICK_PERIOD_MS);
             continue;
         }
+        perte_s = 0;
 
         if (xQueueReceive(linky_uart_queue, (void *)&event, (TickType_t)portMAX_DELAY))
         {
@@ -448,6 +648,7 @@ static void uart_event_task(void *pvParameters)
             other types of events. If we take too much time on data event, the queue might
             be full.*/
             case UART_DATA:
+                erreurs_suite = 0;
                 uint32_t free_space = (LINKY_BUFFER_SIZE - 1) - linky_frame_size;
                 uint32_t to_read;
                 if (soft_rx_active())
@@ -508,6 +709,12 @@ static void uart_event_task(void *pvParameters)
                 ESP_LOGW(TAG, "uart event type: %d", event.type);
                 break;
             }
+            // Filet : une rafale d'erreurs ne doit jamais monopoliser le processeur
+            if (event.type != UART_DATA && ++erreurs_suite >= 32)
+            {
+                erreurs_suite = 0;
+                vTaskDelay(1);
+            }
         }
         // vTaskDelay(10 / portTICK_PERIOD_MS);
     }
@@ -550,7 +757,8 @@ void linky_init(int RX)
 
     if (linky_mode == MODE_STD) // cas où le mode était déjà STD : linky_set_mode sort tôt
     {
-        soft_rx_start(linky_uart_rx);
+        linky_soft_rx_appliquer();
+        linky_uart_error_intr(false);
     }
 
     if (linky_pm_lock == NULL)
@@ -584,12 +792,28 @@ void linky_stop()
         vTaskDelete(linky_uart_task_handle);
         linky_uart_task_handle = NULL;
     }
-    if (linky_uart_queue != NULL)
-    {
-        vQueueDelete(linky_uart_queue);
-        linky_uart_queue = NULL;
-    }
+    // la file appartient au pilote : uart_driver_delete la libere, la supprimer avant = double liberation
+    // (plantage dans uart_event_task, 2026-11-07 02:13)
+    linky_uart_garde(false);
     uart_driver_delete(LINKY_UART);
+    linky_uart_queue = NULL;
+}
+
+// Réinstalle le pilote UART après une perte de la file (voir linky_uart_reparation_demandee)
+static void linky_uart_reparer(void)
+{
+    ESP_LOGE(TAG, "File UART perdue : reinstallation du pilote");
+    linky_filet_reparations++;
+    linky_uart_reparation_demandee = false;
+    linky_uart_garde(false);
+    if (uart_is_driver_installed(LINKY_UART))
+    {
+        uart_driver_delete(LINKY_UART);
+    }
+    linky_uart_queue = NULL;
+    linky_mode_t mode = linky_mode;
+    linky_mode = NONE; // sinon linky_set_mode ne fait rien (mode inchangé)
+    linky_set_mode(mode);
 }
 
 void linky_set_mode(linky_mode_t newMode)
@@ -633,7 +857,7 @@ void linky_set_mode(linky_mode_t newMode)
         baud_rate = 9600;
         linky_mode = MODE_STD;
         linky_group_separator = 0x09;
-        soft_rx_start(linky_uart_rx);
+        linky_soft_rx_appliquer();
         break;
     case MODE_HIST:
     default:
@@ -660,12 +884,14 @@ void linky_set_mode(linky_mode_t newMode)
 
         };
 
+        linky_uart_garde(false); // le pilote écrit la file : écriture légitime
         esp_err_t ret = uart_driver_install(LINKY_UART, RX_BUF_SIZE, 0, 64, &linky_uart_queue, 0);
         if (ret != ESP_OK)
         {
             ESP_LOGE(TAG, "uart_driver_install failed: %s", esp_err_to_name(ret));
             return;
         }
+        linky_uart_garde(true);
         ret = uart_param_config(LINKY_UART, &uart_config);
         if (ret != ESP_OK)
         {
@@ -703,6 +929,7 @@ void linky_set_mode(linky_mode_t newMode)
         }
         ESP_LOGD(TAG, "UART already set up: baudrate set to %ld", baud_rate);
     }
+    linky_uart_error_intr(linky_mode != MODE_STD);
 
     linky_clear_data();
 }
@@ -825,18 +1052,32 @@ static char linky_decode()
         char time[20] = {0};    // store the time as a string (H081225223518)
         char checksum[5] = {0}; // store the checksum as a string
 
-        memcpy(label, group->start + 1, separators[0] - group->start - 1); // copy the label from the group
-        if (linky_mode == MODE_STD && separator_count == 3)                // if the mode is standard and the number of separators is 3
+        // Chaque morceau est borné à son tampon : un séparateur perdu ou gagné (bit abîmé) allonge un
+        // champ et débordait la pile de uart_event_task (trouvé par le banc de tests hôte, 2026-11-14).
+        // Un morceau trop long ne peut pas être valide : le groupe est ignoré.
+#define LINKY_COPIE(dest, debut, fin)                        \
+    do                                                       \
+    {                                                        \
+        if ((size_t)((fin) - (debut)) >= sizeof(dest))       \
+        {                                                    \
+            linky_decode_checksum_error++;                   \
+            goto groupe_suivant;                             \
+        }                                                    \
+        memcpy(dest, debut, (fin) - (debut));                \
+    } while (0)
+        LINKY_COPIE(label, group->start + 1, separators[0]);   // copy the label from the group
+        if (linky_mode == MODE_STD && separator_count == 3)    // if the mode is standard and the number of separators is 3
         {
-            memcpy(time, separators[0] + 1, separators[1] - separators[0] - 1);  // copy the time from the group
-            memcpy(value, separators[1] + 1, separators[2] - separators[1] - 1); // copy the data from the group
-            memcpy(checksum, separators[2] + 1, group->end - separators[2] - 1); // copy the checksum from the group
+            LINKY_COPIE(time, separators[0] + 1, separators[1]);     // copy the time from the group
+            LINKY_COPIE(value, separators[1] + 1, separators[2]);    // copy the data from the group
+            LINKY_COPIE(checksum, separators[2] + 1, group->end);    // copy the checksum from the group
         }
         else
         {
-            memcpy(value, separators[0] + 1, separators[1] - separators[0] - 1); // copy the data from the group
-            memcpy(checksum, separators[1] + 1, group->end - separators[1] - 1); // copy the checksum from the group
+            LINKY_COPIE(value, separators[0] + 1, separators[1]);    // copy the data from the group
+            LINKY_COPIE(checksum, separators[1] + 1, group->end);    // copy the checksum from the group
         }
+#undef LINKY_COPIE
         // ESP_LOGI(TAG, "label: %s value: %s checksum: %s", label, value, checksum);
 
         // La somme de contrôle TIC ne garde que 6 bits (& 0x3F) : un bit 0x40 perdu en ligne passe
@@ -846,6 +1087,16 @@ static char linky_decode()
         {
             linky_decode_checksum_error++;
             ESP_LOGV(TAG, "%s = %s: control character, skipped", label, value);
+            continue;
+        }
+        // Le cas inverse : un bit 0x40 GAGNE fait passer espace, chiffre ou signe (0x20-0x3F) en 0x60-0x7F
+        // (« HEURE PLEINE` », « PAS DE ` MESSAGE », ADSC « 06166r113283 », vus du 14 au 22/11/2026).
+        // Aucune valeur TIC n'utilise cette plage : on rejette. L'horodate n'est pas testee (saison
+        // « e »/« h » en minuscule si l'horloge du compteur est degradee).
+        if (linky_has_bit40_char(value))
+        {
+            linky_decode_checksum_error++;
+            ESP_LOGV(TAG, "%s = %s: character 0x60-0x7F, skipped", label, value);
             continue;
         }
 
@@ -883,7 +1134,28 @@ static char linky_decode()
                     {
                         if (linky_mode == MODE_STD && strcmp(label, "PJOURF+1") == 0)
                         {
-                            bascule_set_profil(value); // profil complet, avant la troncature à 16 caractères
+                            bascule_set_profil(value); // profil complet, avant le compactage ci-dessous
+                            // Le Linky envoie toujours 11 blocs (98 caractères), les blocs libres valant
+                            // « NONUTILE ». On les retire : la journée tient alors en 6 blocs au plus
+                            // (53 caractères), assez court pour un seul message Zigbee. Avant : coupé à 16.
+                            char *src = value, *dst = value;
+                            while (*src)
+                            {
+                                while (*src == ' ')
+                                    src++;
+                                char *fin = src;
+                                while (*fin && *fin != ' ')
+                                    fin++;
+                                if (fin > src && !(fin - src == 8 && strncmp(src, "NONUTILE", 8) == 0))
+                                {
+                                    if (dst != value)
+                                        *dst++ = ' ';
+                                    memmove(dst, src, fin - src);
+                                    dst += fin - src;
+                                }
+                                src = fin;
+                            }
+                            *dst = 0;
                         }
                         if (linky_mode == MODE_STD && !config_values.std_raw_labels)
                         {
@@ -932,6 +1204,10 @@ static char linky_decode()
                         timeLabel.time = linky_decode_time(time);
                         timeLabel.value = strtoull(value, NULL, 10);
                         *(time_label_t *)linky_label_list[j].data = timeLabel;
+                        if (linky_label_list[j].data == &linky_data.std.DATE)
+                        {
+                            linky_heure_ete = (time[0] == 'E' || time[0] == 'e'); // saison de l'horodate
+                        }
                         break;
                     }
                     default:
@@ -940,9 +1216,12 @@ static char linky_decode()
                 }
             }
         }
+    groupe_suivant:;
     }
 
-    raw_group_t last_group = raw_groups[current_group_index - 1];
+    // Aucun groupe complet dans cette passe (fin de lecture juste après un décodage forcé) : on garde le
+    // tampon tel quel. Sans ce test, raw_groups[-1] était lu (trouvé par le banc de tests hôte, 2026-11-14).
+    raw_group_t last_group = current_group_index > 0 ? raw_groups[current_group_index - 1] : (raw_group_t){0};
     if (last_group.start != NULL && last_group.end != NULL)
     {
         // copy data after the last group to the beginning of the buffer
@@ -1103,7 +1382,7 @@ esp_err_t linky_compute()
 {
     esp_err_t err = ESP_OK;
     linky_data.timestamp = wifi_get_timestamp();
-    linky_data.uptime = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    linky_data.uptime = linky_uptime_ms();
 
     linky_contract = linky_get_contract(&linky_data);
 
@@ -1279,8 +1558,20 @@ char linky_update_bascule(uint32_t timeout, bool guetter)
 {
     uint8_t ret;
 
+    if (linky_uart_reparation_demandee)
+    {
+        linky_uart_reparer();
+    }
     esp_pm_lock_acquire(linky_pm_lock);
     linky_reading = 1;
+    uint32_t erreurs_avant = linky_decode_checksum_error; // pour le mode Auto du récepteur logiciel
+    // Mode Auto : SINSTS mis a "inconnu" pour savoir si cette lecture l'a relu (valeur remise sinon)
+    uint32_t sinsts_avant = linky_data.std.SINSTS;
+    bool guet_sinsts = linky_mode == MODE_STD && config_values.soft_rx_mode == SOFT_RX_AUTO;
+    if (guet_sinsts)
+    {
+        linky_data.std.SINSTS = UINT32_MAX;
+    }
     soft_rx_resume();
     linky_same_feilds_count = 0;
     if (linky_mode > MODE_STD)
@@ -1348,6 +1639,22 @@ char linky_update_bascule(uint32_t timeout, bool guetter)
     }
     linky_reading = 0;
     soft_rx_pause();
+    // compteur remis à zéro en cours de lecture (linky_clear_data) : on prend sa valeur telle quelle
+    bool sinsts_manquant = guet_sinsts && linky_mode == MODE_STD && linky_data.std.SINSTS == UINT32_MAX;
+    if (sinsts_manquant)
+    {
+        linky_data.std.SINSTS = sinsts_avant;
+    }
+    uint32_t erreurs_lecture = linky_decode_checksum_error >= erreurs_avant ? linky_decode_checksum_error - erreurs_avant
+                                                                            : linky_decode_checksum_error;
+    linky_soft_rx_auto(ret, erreurs_lecture, sinsts_manquant);
+    soft_rx_stats_t srs;
+    soft_rx_get_stats(&srs, false);
+    linky_diag_rx = (soft_rx_active() ? 1UL << 24 : 0) | (linky_soft_rx_auto_bascule ? 1UL << 25 : 0) |
+                    (sinsts_manquant ? 1UL << 26 : 0) |
+                    ((linky_last_decode_count > 255 ? 255UL : linky_last_decode_count) << 16) |
+                    ((srs.cal_score / 4 > 255 ? 255UL : srs.cal_score / 4) << 8) |
+                    (erreurs_lecture > 255 ? 255UL : erreurs_lecture);
     if (linky_mode == MODE_STD)
     {
         bascule_maj(linky_data.std.DATE.time); // heure du Linky pour le réveil à la prochaine bascule
@@ -1476,11 +1783,56 @@ void linky_print()
  * @brief Vrai si la chaîne contient un caractère de contrôle (< 0x20) : illégal dans une ligne TIC,
  *        signe d'un bit 0x40 perdu que la somme de contrôle (6 bits) ne voit pas
  */
+/**
+ * @brief Durée de fonctionnement en ms. Le compteur de tics dérive pendant les veilles (environ
+ *        +26 % mesuré) : en mode standard on compte avec l'horloge du Linky, ramenée à l'heure
+ *        d'hiver pour ne pas sauter d'une heure au changement d'heure.
+ */
+static uint64_t linky_uptime_ms(void)
+{
+    static time_t ref_linky = 0; // heure du Linky à la première lecture
+    static uint64_t ref_ms = 0;  // durée de fonctionnement à cette première lecture
+    static uint64_t dernier = 0; // dernière durée rendue
+    uint64_t tics_ms = (uint64_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
+    time_t date = linky_data.std.DATE.time;
+
+    if (linky_mode != MODE_STD || date < 1000000000)
+    {
+        return ref_linky ? dernier : tics_ms; // pas d'heure Linky : dernière valeur connue
+    }
+    if (linky_heure_ete)
+    {
+        date -= 3600;
+    }
+    if (!ref_linky)
+    {
+        ref_linky = date;
+        ref_ms = tics_ms;
+    }
+    if (date >= ref_linky) // sinon horloge du Linky reculée : on garde la dernière valeur
+    {
+        dernier = ref_ms + (uint64_t)(date - ref_linky) * 1000;
+    }
+    return dernier;
+}
+
 static bool linky_has_control_char(const char *str)
 {
     for (; *str; str++)
     {
         if ((uint8_t)*str < 0x20)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool linky_has_bit40_char(const char *str)
+{
+    for (; *str; str++)
+    {
+        if ((uint8_t)*str >= 0x60)
         {
             return true;
         }
@@ -1838,4 +2190,31 @@ linky_value_rw_t *linky_get_value_rw(uint32_t index)
         return NULL;
     }
     return &linky_rw_values[index];
+}
+
+bool linky_label_masque(uint32_t i)
+{
+    if (config_values.diag)
+    {
+        return false;
+    }
+    const void *d = linky_label_list[i].data;
+    return d == &linky_diag_reset || d == &linky_diag_pc || d == linky_diag_task || d == &linky_diag_rx;
+}
+
+// Commande console filet-uart : ce que le filet de la file UART a vu depuis le demarrage
+void linky_filet_uart_print(void)
+{
+    int64_t maintenant = esp_timer_get_time();
+    printf("Fonctionnement : %.1f h\n", maintenant / 3600e6);
+    printf("Restaurations de la file : %lu\n", (unsigned long)linky_filet_restaurations);
+    if (linky_filet_restaurations)
+    {
+        printf("  premiere a %.1f h (il y a %.1f h), derniere a %.1f h (il y a %.1f h)\n",
+               linky_filet_premiere_us / 3600e6, (maintenant - linky_filet_premiere_us) / 3600e6,
+               linky_filet_derniere_us / 3600e6, (maintenant - linky_filet_derniere_us) / 3600e6);
+        printf("  voisines a la premiere : %s\n", linky_filet_voisines);
+    }
+    printf("Reinstallations du pilote : %lu\n", (unsigned long)linky_filet_reparations);
+    printf("Secondes sans file : %lu\n", (unsigned long)linky_filet_secondes_sans_file);
 }
