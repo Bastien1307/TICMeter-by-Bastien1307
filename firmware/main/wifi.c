@@ -22,6 +22,7 @@
 #include "esp_sntp.h"
 #include <time.h>
 #include "esp_netif_sntp.h"
+#include "esp_netif.h"
 #include "esp_mac.h"
 #include "esp_private/periph_ctrl.h"
 #include "soc/periph_defs.h"
@@ -55,6 +56,7 @@
  Local Function Declaration
 ===============================================================================*/
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
+static void wifi_log_station_info(const char *context);
 static void wifi_time_sync_notification_cb(struct timeval *tv);
 static void stop_captive_portal_task(void *pvParameter);
 
@@ -74,6 +76,9 @@ esp_netif_ip_info_t wifi_current_ip;
 static int s_retry_num = 0;
 static EventGroupHandle_t s_wifi_event_group;
 static EventGroupHandle_t ping_event_group;
+static uint8_t sta_associated = 0;
+static uint8_t sta_got_ip = 0;
+static esp_netif_t *sta_netif = NULL;
 static uint8_t ap_started = 0;
 static uint8_t sta_connecting = 0;
 
@@ -118,9 +123,13 @@ uint8_t wifi_init()
         ESP_LOGE(TAG, "esp_event_loop_create_default failed with 0x%X", err);
         return 0;
     }
-    esp_netif_t *netif = esp_netif_create_default_wifi_sta();
-
-    err = esp_netif_set_hostname(netif, HOSTNAME);
+    sta_netif = esp_netif_create_default_wifi_sta();
+    if (sta_netif == NULL)
+    {
+        ESP_LOGE(TAG, "esp_netif_create_default_wifi_sta failed");
+        return 0;
+    }
+    err = esp_netif_set_hostname(sta_netif, HOSTNAME);
     if (err != ESP_OK)
     {
         ESP_LOGW(TAG, "Failed to set hostname: 0x%X", err);
@@ -136,6 +145,7 @@ uint8_t wifi_init()
 
     esp_event_handler_instance_t instance_any_id;
     esp_event_handler_instance_t instance_got_ip;
+    esp_event_handler_instance_t instance_lost_ip;
 
     err = esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, &instance_any_id);
     if (err != ESP_OK)
@@ -147,6 +157,12 @@ uint8_t wifi_init()
     if (err != ESP_OK)
     {
         ESP_LOGE(TAG, "esp_event_handler_instance_register failed with 0x%X", err);
+        return 0;
+    }
+    err = esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_LOST_IP, &wifi_event_handler, NULL, &instance_lost_ip);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "IP_EVENT_STA_LOST_IP handler registration failed with 0x%X", err);
         return 0;
     }
     s_wifi_event_group = xEventGroupCreate();
@@ -177,6 +193,8 @@ esp_err_t wifi_connect()
     led_start_pattern(LED_CONNECTING);
 
     s_retry_num = 0;
+    sta_associated = 0;
+    sta_got_ip = 0;
     xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT | WIFI_AUTHFAIL_BIT | WIFI_NO_AP_FOUND_BIT);
 
     strncpy((char *)sta_wifi_config.sta.ssid, config_values.ssid, sizeof(sta_wifi_config.sta.ssid));
@@ -313,6 +331,9 @@ esp_err_t wifi_connect()
     else
     {
         ESP_LOGE(TAG, "Failed to connect to SSID:%s Timeout", (char *)sta_wifi_config.sta.ssid);
+        ESP_LOGE(TAG, "Timeout diagnostics: associated=%d got_ip=%d retries=%d last_wifi_err=%d",
+                 sta_associated, sta_got_ip, s_retry_num, last_wifi_err);
+        wifi_log_station_info("CONNECT_TIMEOUT");
         wifi_timeout_counter++;
         wifi_state = WIFI_FAILED;
         led_start_pattern(LED_CONNECTING_FAILED);
@@ -364,7 +385,9 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
     else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED && wifi_state != WIFI_DISCONNECTED)
     {
         wifi_event_sta_disconnected_t *event = (wifi_event_sta_disconnected_t *)event_data;
-        ESP_LOGI(TAG, "Disconnected from SSID:%s, reason:%u, rssi%d", (char *)event->ssid, event->reason, event->rssi);
+        ESP_LOGI(TAG, "Disconnected from SSID:%s, BSSID=" MACSTR ", reason:%u, RSSI=%d dBm",
+                 (char *)event->ssid, MAC2STR(event->bssid), event->reason, event->rssi);
+        sta_associated = 0;
         if (s_retry_num < ESP_MAXIMUM_RETRY)
         {
             wifi_state = WIFI_CONNECTING;
@@ -401,16 +424,26 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
     else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED)
     {
         ESP_LOGI(TAG, "Connected");
+        sta_associated = 1;
         wifi_state = WIFI_CONNECTED;
+        wifi_log_station_info("STA_CONNECTED (DHCP starts after association)");
     }
     else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
     {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-        ESP_LOGI(TAG, "IP:" IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "Got IPv4: " IPSTR ", netmask: " IPSTR ", gateway: " IPSTR ", ip_changed=%d",
+                 IP2STR(&event->ip_info.ip), IP2STR(&event->ip_info.netmask),
+                 IP2STR(&event->ip_info.gw), event->ip_changed);
         wifi_current_ip = event->ip_info;
+        sta_got_ip = 1;
         s_retry_num = 0;
         wifi_state = WIFI_CONNECTED;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+    }
+    else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_LOST_IP)
+    {
+        sta_got_ip = 0;
+        ESP_LOGW(TAG, "IP_EVENT_STA_LOST_IP: IPv4 address became invalid");
     }
     else if (event_id == WIFI_EVENT_AP_STACONNECTED)
     {
@@ -427,6 +460,56 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
     else
     {
         // ESP_LOGE(TAG, "Unknown event: event_base: %s, event_id: %ld", event_base, event_id);
+    }
+}
+
+/*
+ * Diagnostic only: report the actual AP (BSSID), radio signal and IPv4/DHCP
+ * state. This does not change connection or power-management behaviour.
+ */
+static void wifi_log_station_info(const char *context)
+{
+    wifi_ap_record_t ap_info = {0};
+    esp_err_t ap_err = esp_wifi_sta_get_ap_info(&ap_info);
+
+    if (ap_err == ESP_OK)
+    {
+        ESP_LOGI(TAG, "%s: AP BSSID=" MACSTR ", RSSI=%d dBm, channel=%u, authmode=%d",
+                 context, MAC2STR(ap_info.bssid), ap_info.rssi,
+                 ap_info.primary, ap_info.authmode);
+    }
+    else
+    {
+        ESP_LOGW(TAG, "%s: esp_wifi_sta_get_ap_info failed: 0x%X", context, ap_err);
+    }
+
+    if (sta_netif != NULL)
+    {
+        esp_netif_ip_info_t ip_info = {0};
+        esp_netif_dhcp_status_t dhcp_status;
+        esp_err_t ip_err = esp_netif_get_ip_info(sta_netif, &ip_info);
+        esp_err_t dhcp_err = esp_netif_dhcpc_get_status(sta_netif, &dhcp_status);
+
+        if (ip_err == ESP_OK)
+        {
+            ESP_LOGI(TAG, "%s: IPv4=" IPSTR ", netmask=" IPSTR ", gateway=" IPSTR,
+                     context, IP2STR(&ip_info.ip), IP2STR(&ip_info.netmask),
+                     IP2STR(&ip_info.gw));
+        }
+        else
+        {
+            ESP_LOGW(TAG, "%s: esp_netif_get_ip_info failed: 0x%X", context, ip_err);
+        }
+
+        if (dhcp_err == ESP_OK)
+        {
+            ESP_LOGI(TAG, "%s: DHCP client status=%d (0=INIT, 1=STARTED, 2=STOPPED)",
+                     context, dhcp_status);
+        }
+        else
+        {
+            ESP_LOGW(TAG, "%s: esp_netif_dhcpc_get_status failed: 0x%X", context, dhcp_err);
+        }
     }
 }
 
