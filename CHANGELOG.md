@@ -5,6 +5,21 @@ Modifications apportées au firmware de [GammaTroniques](https://github.com/Gamm
 
 *Changes made to the GammaTroniques firmware, based on its `main` branch (commit `bd2da3f`).*
 
+## V3.4.15-std — 2026-11-28
+
+Version de diagnostic Wi-Fi, proposée par [DjMomo](https://github.com/DjMomo) (PR #1). Aucun
+changement pour le mode Zigbee.
+*Wi-Fi diagnostics release, contributed by DjMomo (PR #1). No change in Zigbee mode.*
+
+### Ajouté / Added
+
+- **Journal Wi-Fi plus parlant.** Quand la connexion échoue, la console indique maintenant la
+  borne réellement utilisée (BSSID), la force du signal, le canal, et si le module a obtenu une
+  adresse IP (état du client DHCP). La perte de l'adresse IP est aussi signalée. Le
+  fonctionnement du Wi-Fi ne change pas, seules des lignes de journal sont ajoutées.
+  *More helpful Wi-Fi log: access point (BSSID), signal strength, channel and DHCP state on a
+  failed connection, and IP loss reported. Wi-Fi behaviour is unchanged.*
+
 ## V3.4.14-std — 2026-11-28
 
 Validée sur notre TICMeter (Linky monophasé, mode standard, HP/HC, Zigbee for Domoticz) pendant

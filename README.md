@@ -11,7 +11,7 @@
 
 ## 📦 Dernière version / Latest release
 
-### 👉 **[Releases GitHub](https://github.com/Bastien1307/TICMeter-by-Bastien1307/releases)** — dernière / latest : **[V3.4.14-std](https://github.com/Bastien1307/TICMeter-by-Bastien1307/releases/latest)** (2026-11-28)
+### 👉 **[Releases GitHub](https://github.com/Bastien1307/TICMeter-by-Bastien1307/releases)** — dernière / latest : **[V3.4.15-std](https://github.com/Bastien1307/TICMeter-by-Bastien1307/releases/latest)** (2026-11-28)
 
 Chaque release donne ses changements et les fichiers à télécharger (`TICMeter.bin`,
 `storage.bin`, `ota_data_initial.bin`, `SHA256SUMS.txt`). La page web ci-dessous installe
@@ -92,7 +92,7 @@ dans Domoticz (plugin Zigbee for Domoticz), sur l'alimentation du Linky seule.
 - **Zigbee** : les mises à jour d'attributs prennent désormais le verrou de la pile Zigbee
   (il manquait : accès concurrent possible avec une lecture du coordinateur).
 - **Numérotation au-dessus de toute version officielle** (`V3.3.0-std` pour la première
-  version, `V3.4.14-std` aujourd'hui ; dernière version officielle : V3.2.13) : ni la page de
+  version, `V3.4.15-std` aujourd'hui ; dernière version officielle : V3.2.13) : ni la page de
   mise à jour GammaTroniques ni un coordinateur Zigbee ne proposeront de « mise à jour »
   qui écraserait la correction. Le champ Zigbee *Date code* se termine par `-std`.
 - Compilation : `htmlmin2` au lieu de `htmlmin`, qui ne s'installe plus en Python 3.13.
@@ -242,7 +242,7 @@ instead of 11, contract recognised, peak / off-peak switching reported to Domoti
 configurable with `set-std-labels 1`); console available in Zigbee mode when USB is
 plugged (`soft-rx-stats`, `set-rx-skew`, `set-std-labels`); Zigbee attribute updates now
 take the Zigbee stack lock; version numbers above any official release (`V3.3.0-std` for the
-first build, `V3.4.14-std` today; latest official release: V3.2.13), so neither the
+first build, `V3.4.15-std` today; latest official release: V3.2.13), so neither the
 GammaTroniques update page nor a Zigbee coordinator will offer an "update" that would
 overwrite the fix; `htmlmin2` build dependency.
 
